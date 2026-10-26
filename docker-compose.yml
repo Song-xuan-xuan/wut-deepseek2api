@@ -10,12 +10,16 @@ services:
     environment:
       WHUT_HOST: 0.0.0.0
       WHUT_PORT: "8787"
+      # 容器默认 UTC，会让“今日/按小时”统计错位 8 小时
+      TZ: Asia/Shanghai
     volumes:
       # token 与用量库都在这里，重建容器不丢
       - ./data:/app/data
     ports:
-      # 默认只绑本机；要给手机/平板用，改成 "8787:8787" 并自己加鉴权
+      # 默认只绑本机（IPv4 + IPv6 都绑，避免浏览器把 localhost 解析成 ::1 时打不开）
+      # 要给手机/平板用，改成 "8787:8787" 并自己加鉴权
       - "127.0.0.1:8787:8787"
+      - "[::1]:8787:8787"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8787/health',timeout=5).status==200 else 1)"]

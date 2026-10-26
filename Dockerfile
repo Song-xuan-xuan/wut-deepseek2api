@@ -5,7 +5,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     WHUT_HOST=0.0.0.0 \
     WHUT_PORT=8787 \
-    WHUT_DATA_DIR=/app/data
+    WHUT_DATA_DIR=/app/data \
+    TZ=Asia/Shanghai
 
 WORKDIR /app
 

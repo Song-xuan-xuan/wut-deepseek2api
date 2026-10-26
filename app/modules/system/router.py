@@ -6,13 +6,12 @@ import time
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from ...core.paths import ROOT, shorten_path
 from ...core.settings import Settings
 from ...providers.base import Provider
-from ..shared import is_loopback
 
 DIST = ROOT / "web" / "dist"
 
@@ -109,6 +108,9 @@ def attach(app: FastAPI, settings: Settings, provider: Provider) -> None:
         result["usage"] = {
             "available": store.available,
             "today": store.summary("today")["totals"],
+            "last_24h": store.summary("24h")["totals"],
+            # 仪表盘的 24 小时折线从这里取（前端优先用 /health，缺失时才会退回 usage?range=7d 的日粒度数据）
+            "series_24h": store.series("24h"),
             "db_path": shorten_path(store.db_path),
         }
         if token.get("expiring_soon"):
@@ -135,6 +137,9 @@ def attach(app: FastAPI, settings: Settings, provider: Provider) -> None:
         except Exception as exc:  # noqa: BLE001
             models_error = getattr(exc, "message", str(exc))
         listen = f"{settings.listen.host}:{settings.listen.port}"
+        # 容器里监听 0.0.0.0，但用户是在宿主机浏览器里访问，给个能直接点开的地址
+        display_host = "127.0.0.1" if settings.listen.host in ("0.0.0.0", "::") else settings.listen.host
+        display_listen = f"{display_host}:{settings.listen.port}"
         loopback_only = settings.listen.host in ("127.0.0.1", "localhost", "::1")
         return {
             "service": {
@@ -145,7 +150,8 @@ def attach(app: FastAPI, settings: Settings, provider: Provider) -> None:
                 "model_guard": app.state.model_guard.snapshot(),
                 "panel_key_needed": not loopback_only,
                 "upstream": settings.upstream.base_url,
-                "listen": listen,
+                "listen": display_listen,
+                "listen_raw": listen,
                 "client_api_key": settings.client_api_key,
                 "default_model": settings.default_model,
                 "max_tokens_cap": settings.max_tokens_cap,
@@ -170,16 +176,24 @@ def attach(app: FastAPI, settings: Settings, provider: Provider) -> None:
             "server_time": time.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-    @app.get("/", response_class=PlainTextResponse)
-    async def index(request: Request) -> Any:
-        if not is_loopback(request) and not app.state.allowed(request):
-            return PlainTextResponse("whut-2api\n", status_code=401)
+    @app.get("/")
+    async def index() -> Any:
+        """根路径直接进面板。
+
+        不管是从 OrbStack 的 127.0.0.1 链接、`*.orb.local` 域名还是收藏夹进来，
+        都落到能用的 UI 上，而不是给一段容易被当成“打不开”的纯文本。
+        """
+        return RedirectResponse("/dashboard", status_code=307)
+
+    @app.get("/api/endpoints", response_class=PlainTextResponse)
+    async def endpoints() -> PlainTextResponse:
+        """纯文本接口清单（给 curl / 忘记地址时看）。"""
         return PlainTextResponse(
             "\n".join(
                 [
                     "whut-2api — 把学校 OpenWebUI 包装成 OpenAI 兼容接口",
                     "",
-                    f"面板      {settings.listen.host}:{settings.listen.port}/dashboard",
+                    f"面板      http://{settings.listen.host}:{settings.listen.port}/dashboard",
                     "GET  /v1/models            模型列表",
                     "POST /v1/chat/completions  对话补全（stream / tools 均支持）",
                     "POST /v1/messages          Anthropic 协议（Claude Code / Anthropic SDK）",
@@ -193,6 +207,7 @@ def attach(app: FastAPI, settings: Settings, provider: Provider) -> None:
                     f"Auth: Authorization: Bearer {settings.client_api_key or '(未设置)'}",
                 ]
             )
+            + "\n"
         )
 
     # 面板：优先用 Vite 构建产物，没有就回退到提示页

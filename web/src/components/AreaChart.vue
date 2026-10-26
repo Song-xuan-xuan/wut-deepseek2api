@@ -143,6 +143,8 @@ const props = defineProps({
 })
 
 const W = 720
+// 画布高度：等于组件高度，坐标系统一后 viewBox 才有效
+const H = computed(() => Math.max(props.height, 80))
 const pad = { top: 14, right: 52, bottom: 26, left: 48 }
 const uid = Math.random().toString(36).slice(2, 8)
 const hidden = ref(new Set())
@@ -182,7 +184,7 @@ const maxRight = computed(() =>
 )
 
 const innerW = W - pad.left - pad.right
-const innerH = props.height - pad.top - pad.bottom
+const innerH = computed(() => H.value - pad.top - pad.bottom)
 const count = computed(() => props.labels.length)
 
 function xAt(index) {
@@ -192,7 +194,7 @@ function xAt(index) {
 function yAt(value, axis = 'left') {
   const max = axis === 'right' ? maxRight.value : maxLeft.value
   const ratio = max ? value / max : 0
-  return pad.top + innerH * (1 - Math.min(Math.max(ratio, 0), 1))
+  return pad.top + innerH.value * (1 - Math.min(Math.max(ratio, 0), 1))
 }
 
 const visible = computed(() =>
@@ -213,7 +215,7 @@ const ticks = computed(() => {
   return Array.from({ length: steps + 1 }, (_, index) => {
     const ratio = (steps - index) / steps
     return {
-      y: pad.top + innerH * (1 - ratio),
+      y: pad.top + innerH.value * (1 - ratio),
       left: shortNumber(maxLeft.value * ratio),
       right: shortNumber(maxRight.value * ratio),
     }
@@ -240,7 +242,7 @@ function linePath(item) {
 }
 function areaPath(item) {
   if (!item.points.length) return ''
-  const bottom = pad.top + innerH
+  const bottom = pad.top + innerH.value
   const first = item.points[0]
   const last = item.points.at(-1)
   return `${linePath(item)} L${last.x},${bottom} L${first.x},${bottom} Z`
