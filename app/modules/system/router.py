@@ -134,12 +134,18 @@ def attach(app: FastAPI, settings: Settings, provider: Provider) -> None:
             models = [m["id"] for m in payload["data"]]
         except Exception as exc:  # noqa: BLE001
             models_error = getattr(exc, "message", str(exc))
+        listen = f"{settings.listen.host}:{settings.listen.port}"
+        loopback_only = settings.listen.host in ("127.0.0.1", "localhost", "::1")
         return {
             "service": {
                 "name": "whut-2api",
                 "version": __import__("app").__version__,
+                "repo_url": settings.repo_url,
+                "disabled_models": settings.upstream.disabled_models,
+                "model_guard": app.state.model_guard.snapshot(),
+                "panel_key_needed": not loopback_only,
                 "upstream": settings.upstream.base_url,
-                "listen": f"{settings.listen.host}:{settings.listen.port}",
+                "listen": listen,
                 "client_api_key": settings.client_api_key,
                 "default_model": settings.default_model,
                 "max_tokens_cap": settings.max_tokens_cap,

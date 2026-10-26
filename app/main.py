@@ -25,6 +25,7 @@ from fastapi.responses import JSONResponse
 from . import __version__
 from .core.db import Database
 from .core.logging import log, noop
+from .core.model_guard import ModelGuard
 from .core.settings import Settings, load_settings
 from .modules.access.router import attach as attach_access
 from .modules.access.store import KeyStore
@@ -89,6 +90,7 @@ def create_app(
     app.state.events = events
     app.state.auth = auth
     app.state.refresher = auth  # 兼容旧脚本
+    app.state.model_guard = ModelGuard()
     app.state.req_log = log if settings.log_requests else noop
     app.state.allowed = make_guard(settings, settings.client_api_key)
 

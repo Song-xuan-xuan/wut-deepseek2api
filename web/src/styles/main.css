@@ -702,3 +702,29 @@ code, .mono { font-family: var(--font-mono); }
 
 .empty-state { padding: 40px 20px; text-align: center; color: var(--muted-foreground); }
 .empty-state .big { font-size: 28px; margin-bottom: 8px; opacity: 0.5; }
+
+/* GitHub 链接（系统信息页 + 侧边栏页脚） */
+.repo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg);
+  text-decoration: none;
+  font-weight: 500;
+}
+.repo-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.repo-mini {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+.repo-mini:hover {
+  color: var(--accent);
+}

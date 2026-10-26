@@ -339,6 +339,40 @@ print(resp.choices[0].message.content)
 
 ![用量统计](https://raw.githubusercontent.com/Song-xuan-xuan/wut-deepseek2api/main/web/public/screenshots/usage.png)
 
+## 模型实测（`docs/model-capabilities.md`）
+
+学校三个模型的真实表现是脚本测出来的，不是抄官方参数。全套件在 `scripts/modeltest/`：
+
+```bash
+# 分批跑（避免被学校限流），结果自动落到 scripts/modeltest/results/<时间戳>/
+.venv/bin/python scripts/modeltest/bench.py latency concurrency tools --models deepseek-v4-flash
+.venv/bin/python scripts/modeltest/bench.py context stream vision cache --models deepseek-v4-flash
+.venv/bin/python scripts/modeltest/bench.py robust --models deepseek-v4-flash
+
+# 合并多次结果并直接刷进 docs（--publish）
+.venv/bin/python scripts/modeltest/bench.py report --results a/results.json,b/results.json --publish
+```
+
+| 套件 | 测什么 |
+|---|---|
+| `latency` | 非流式延迟、流式首字 TTFT、生成速度 tok/s、思维链占输出比 |
+| `concurrency` | 1/2/4/6 逐级加压，成功率、P50/P95、错误码、吞吐（失败率 >50% 自动停） |
+| `context` | 从小到大喂输入，读回 `usage.prompt_tokens` 判断静默截断，找 413 边界 |
+| `tools` | 单工具 / 强制 / 多工具择一 / 结果回灌 / 流式增量 / 禁用，6 个用例 |
+| `stream` | 分片数、`[DONE]`、流内 usage、思维链、分片间隔、客户端中断后能否继续 |
+| `robust` | 极小预算、截断、stop、system 约束、JSON、非法模型、超大 max_tokens、多语言、多轮 |
+| `vision` | 发一张 8×8 PNG，验证是否真能识图 |
+| `cache` | 同一长前缀发两次，看 token 数与耗时（缓存迹象） |
+
+本轮结论（完整数据见 [docs/model-capabilities.md](docs/model-capabilities.md)）：
+
+- **`deepseek-v4-flash` 是主力**：TTFT ≈ 2.5 s、27 tok/s、上下文实测 20 万 tokens、工具调用稳定；
+- **`deepseek-v3`**：TTFT ≈ 7.4 s（慢 3 倍）、上下文仅 3.7 万 tokens、大输入会静默失败；
+- **`qwen3-235b-a22b`**：上游 429，当前不可用；
+- **学校反代请求体上限 ≈ 1 MB**（0.99 MB 通过，1.05 MB 直接 413）；
+- **三个模型都不支持图片输入**；
+- **`tool_choice=required` 不可靠**，一律用 `auto`。
+
 ## 配置（`config.json`）
 
 首次启动自动生成；用面板认证过的同学基本不用改。
@@ -349,12 +383,14 @@ print(resp.choices[0].message.content)
 | `upstream.base_url` | 学校地址 | 支持子路径部署 |
 | `upstream.token_file` | `data/token` | 按 mtime 热加载，换 token 不用重启 |
 | `upstream.retries` | `2` | 429/502-504/网络错误重试 |
+| `upstream.disabled_models` | `[]` | 永不列出的模型（学校侧挂了的模型可以写进来） |
 | `upstream.circuit_breaker_threshold` / `_seconds` | `3` / `60` | 连续不可达 → 熔断冷却 |
 | `client_api_key` | `sk-whut-local` | 主 key；置空且无子 key 时不校验 |
 | `max_tokens_cap` | `32768` | 输出上限钳制 |
 | `strip_fields` | `store,metadata,…` | 上游不一定认识的字段 |
 | `keep_alive_ms` | `8000` | 流式静默心跳，0=关闭 |
 | `default_model` | `deepseek-v4-flash` | 请求没带 model 的兜底 |
+| `repo_url` | 本仓库地址 | 面板右上「GitHub」图标跳转的地址 |
 | `token_refresh.email` | 学号 | 面板认证后自动写入 |
 | `token_refresh.refresh_before_days` | `2` | 剩余小于该值就续期 |
 | `token_refresh.check_interval_minutes` | `60` | 后台检查间隔 |
@@ -391,6 +427,7 @@ wut-deepseek2api/
 │   ├── src/                  源码
 │   ├── public/               架构动画图 · 截图
 │   └── dist/                 构建产物（已提交，运行不需要 Node）
+├── scripts/modeltest/        模型实测（bench · suites · report）+ results/
 ├── docs/                     说明文档（模型与协议实测报告）
 ├── data/                     运行时数据（token、用量库，已忽略）
 ├── Dockerfile · docker-compose.yml · .env.example

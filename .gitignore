@@ -19,6 +19,9 @@ scripts/
 # 前端
 web/node_modules/
 
+# 实测原始结果（报告本身已发布到 docs/）
+scripts/modeltest/results/
+
 # 其它
 .pi/
 .DS_Store

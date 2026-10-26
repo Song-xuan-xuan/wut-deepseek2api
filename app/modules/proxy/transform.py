@@ -119,3 +119,10 @@ def ascii_notes(notes: list[str]) -> str:
     """HTTP 头只能是 latin1，notes 里的中文/箭头要剥掉。"""
     joined = ",".join(notes)
     return re.sub(r"[^\x20-\x7E]", "", joined).replace(",,", ",")
+
+
+def normalize_upstream_status(status: int, message: str) -> int:
+    """学校把限流包成 400 返回（消息里写着 429），还原成 429 让客户端正确退避。"""
+    if status == 400 and message.strip().startswith("429"):
+        return 429
+    return status

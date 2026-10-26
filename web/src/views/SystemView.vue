@@ -27,6 +27,22 @@
             <div class="v">{{ state.info?.config_path }}</div>
             <div class="k">数据库</div>
             <div class="v">{{ state.info?.usage?.db_path }}</div>
+            <div class="k">仓库</div>
+            <div class="v">
+              <a class="repo-link" :href="state.info?.repo_url" target="_blank" rel="noreferrer">
+                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="currentColor">
+                  <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38
+                           0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13
+                           -.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66
+                           .07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15
+                           -.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0
+                           1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82
+                           2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01
+                           2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/>
+                </svg>
+                Song-xuan-xuan/wut-deepseek2api
+              </a>
+            </div>
           </div>
         </div>
       </div>
@@ -45,6 +61,15 @@
             <div class="v">{{ state.circuit?.threshold }} 次</div>
             <div class="k">冷却时长</div>
             <div class="v">{{ state.circuit?.cooldown_seconds }}s</div>
+            <div class="k">已隔离模型</div>
+            <div class="v">
+              <template v-if="blockedModels.length">
+                <span v-for="(item, i) in blockedModels" :key="item.model" class="warn">
+                  {{ item.model }}（{{ Math.round(item.seconds / 60) }} 分钟后恢复）<template v-if="i < blockedModels.length - 1">、</template>
+                </span>
+              </template>
+              <span v-else class="muted">无</span>
+            </div>
             <div class="k">健康检查</div>
             <div class="v"><a href="/health" target="_blank" rel="noreferrer">/health</a></div>
             <div class="k">接口文档</div>
@@ -57,14 +82,21 @@
     <section class="panel">
       <div class="panel-head">
         <h2>浏览器端 API Key</h2>
-        <span class="hint">只影响这个面板的请求，不改服务端配置</span>
+        <span class="hint">只是本浏览器调用面板接口时带的凭证</span>
       </div>
       <div class="panel-body">
+        <p class="hint-text" style="margin: 0 0 10px">
+          面板的请求要带 <code>Authorization</code> 头。从本机打开（{{
+            state.info?.listen
+          }}）时服务端直接放行，<b>这一栏用不到</b>；
+          只有你从<b>别的设备</b>（手机 / 另一台电脑，用局域网 IP 或域名访问）打开面板时，
+          才需要填这里，值必须是 <code>config.json</code> 里的 <code>client_api_key</code>。
+        </p>
         <div class="row">
           <input v-model="key" class="input mono" style="max-width: 360px" />
           <button class="btn" @click="saveKey">保存到浏览器</button>
           <span class="hint-text">
-            服务端真正的 key 在 config.json 的 <code>client_api_key</code>
+            状态：<b>{{ state.info?.panel_key_needed ? '当前不是本机访问，需要填' : '当前是本机访问，不需要填' }}</b>
           </span>
         </div>
       </div>
@@ -89,7 +121,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { getApiKey } from '../api'
 import { useSystemStore } from '../stores/system'
 import { useUi } from '../stores/ui'
@@ -97,6 +129,9 @@ import { useUi } from '../stores/ui'
 const { state } = useSystemStore()
 const { toast, setApiKey } = useUi()
 const key = ref(getApiKey())
+const blockedModels = computed(() =>
+  Object.entries(state.info?.model_guard?.blocked || {}).map(([model, seconds]) => ({ model, seconds })),
+)
 
 const commands = [
   { key: '启动', value: '.venv/bin/python -m app' },

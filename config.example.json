@@ -16,7 +16,8 @@
     "retries": 2,
     "circuit_breaker_threshold": 3,
     "circuit_breaker_seconds": 60,
-    "credentials_file": "data/credentials.json"
+    "credentials_file": "data/credentials.json",
+    "disabled_models": []
   },
   "default_model": "deepseek-v4-flash",
   "client_api_key": "sk-whut-local",
@@ -48,5 +49,6 @@
     "default_rpm_limit": 120,
     "default_daily_token_limit": 0,
     "expose_network": true
-  }
+  },
+  "repo_url": "https://github.com/Song-xuan-xuan/wut-deepseek2api"
 }

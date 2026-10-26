@@ -38,6 +38,7 @@ class UpstreamSettings:
     credentials_file: str = "data/credentials.json"
     token: str = ""
     cookie: str = ""
+    disabled_models: list[str] = field(default_factory=list)
     timeout_ms: int = 600_000
     retries: int = 2
     circuit_breaker_threshold: int = 3
@@ -89,6 +90,7 @@ class Settings:
     keep_alive_ms: int = 8_000
     log_requests: bool = True
     models: list[Any] = field(default_factory=list)
+    repo_url: str = "https://github.com/Song-xuan-xuan/wut-deepseek2api"
     config_path: str = ""
 
 
@@ -147,6 +149,12 @@ def load_settings(path: str | None = None) -> Settings:
         merged["client_api_key"] = env["WHUT_CLIENT_KEY"]
     if env.get("WHUT_MAX_TOKENS_CAP"):
         merged["max_tokens_cap"] = int(env["WHUT_MAX_TOKENS_CAP"])
+    if env.get("WHUT_REPO_URL"):
+        merged["repo_url"] = env["WHUT_REPO_URL"]
+    if env.get("WHUT_DISABLED_MODELS"):
+        ups["disabled_models"] = [
+            item.strip() for item in env["WHUT_DISABLED_MODELS"].split(",") if item.strip()
+        ]
     if env.get("WHUT_EMAIL"):
         merged.setdefault("token_refresh", {})["email"] = env["WHUT_EMAIL"]
 

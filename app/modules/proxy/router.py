@@ -17,6 +17,7 @@ from ..usage.store import UsageStore
 from .streaming import sse_stream
 from .transform import (
     ascii_notes,
+    normalize_upstream_status,
     sanitize_chat_request,
     to_openai_model_list,
     upstream_error_message,
@@ -39,16 +40,27 @@ def attach(
 
     async def get_models(force: bool = False) -> dict[str, Any]:
         if not force and cache["payload"] and time.time() - cache["at"] < MODEL_CACHE_TTL:
-            return cache["payload"]
+            return _visible(cache["payload"])
         try:
             raw = await provider.list_models()
         except ProviderError:
             if settings.models:
-                return to_openai_model_list(None, settings.models)
+                return _visible(to_openai_model_list(None, settings.models))
             raise
         payload = to_openai_model_list(raw, settings.models)
         cache.update(at=time.time(), payload=payload)
-        return payload
+        return _visible(payload)
+
+    def _visible(payload: dict[str, Any]) -> dict[str, Any]:
+        """剔除配置里禁用的模型，以及被看门狗临时隔离的模型（缓存里存全量）。"""
+        disabled = {m for m in (settings.upstream.disabled_models or []) if m}
+        guard = app.state.model_guard
+        data = [
+            m
+            for m in payload.get("data", [])
+            if m.get("id") not in disabled and not guard.is_blocked(m.get("id", ""))
+        ]
+        return {**payload, "data": data}
 
     app.state.get_models = get_models
 
@@ -116,9 +128,11 @@ def attach(
             except json.JSONDecodeError:
                 data = None
             message = upstream_error_message(resp.status_code, data, text)
+            status = normalize_upstream_status(resp.status_code, message)
+            app.state.model_guard.record_failure(str(body.get("model") or ""), status)
             store.record(
                 model=str(body.get("model") or ""),
-                status=resp.status_code,
+                status=status,
                 ms=(time.time() - started) * 1000,
                 stream=bool(body.get("stream")),
                 tools=len(body.get("tools") or []),
@@ -130,13 +144,15 @@ def attach(
                 f"POST /v1/chat/completions {resp.status_code} {int((time.time() - started) * 1000)}ms "
                 f"{meta} upstream-error={message[:120]!r}"
             )
-            return error_response(message, resp.status_code)
+            return error_response(message, status)
 
         content_type = resp.headers.get("content-type", "")
         streaming = "event-stream" in content_type or (
             body.get("stream") and "application/json" not in content_type
         )
         extra_headers = {"x-whut-notes": ascii_notes(notes)} if notes else {}
+
+        app.state.model_guard.record_success(str(body.get("model") or ""))
 
         if streaming:
             observed: dict[str, Any] = {"usage": None, "tool_calls": 0, "finish": None}
@@ -190,8 +206,33 @@ def attach(
             )
             return error_response(f"上游返回了非 JSON 内容：{data[:200]!r}", 502)
 
+        # 上游偶尔会 200 + 空 choices（实测 deepseek-v3 收到超大输入时），
+        # 直接透传会让 agent 拿到 null 崩掉，这里转成明确的 502。
+        if not payload.get("choices"):
+            store.record(
+                model=str(body.get("model") or ""),
+                status=502,
+                ms=(time.time() - started) * 1000,
+                stream=False,
+                tools=len(body.get("tools") or []),
+                notes=notes,
+                error="上游返回 200 但 choices 为空",
+                key_id=key_id,
+            )
+            return error_response(
+                "上游返回 200 但没有 choices（通常是输入过大导致上游静默失败，请缩短输入或换模型）", 502
+            )
+
+        choice = payload["choices"][0] or {}
+        message = choice.get("message") or {}
+        # tool_choice=required 时上游会给出 finish_reason=tool_calls 却没有 tool_calls
+        # （把残片塞进 content 的 DSML 标记里），这种自相矛盾的状态会让客户端报错。
+        if choice.get("finish_reason") == "tool_calls" and not message.get("tool_calls"):
+            choice["finish_reason"] = "stop"
+            notes = [*notes, "fix-orphan-tool-calls"]
+
         usage = payload.get("usage") or {}
-        tool_calls = len(((payload.get("choices") or [{}])[0].get("message") or {}).get("tool_calls") or [])
+        tool_calls = len(message.get("tool_calls") or [])
         store.record(
             model=str(body.get("model") or ""),
             status=200,
