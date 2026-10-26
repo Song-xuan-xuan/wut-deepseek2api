@@ -101,17 +101,10 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt          # Windows: .venv\Scripts\pip install -r requirements.txt
 cp config.example.json config.json                 # Windows: copy config.example.json config.json
 .venv/bin/python -m app                            # Windows: .venv\Scripts\python -m app
-```
-
-所有运行数据都在项目目录里：
 
 ```
-data/
-├── token         你的学校会话 token（600 权限）
-└── usage.db      用量统计（SQLite）
-```
 
-`data/` 已在 `.gitignore` 里，不会误传。
+
 
 **③ 一键认证**
 
@@ -137,7 +130,7 @@ docker compose logs -f      # 看到 "token 7.0 天后过期" 就成功了
 
 数据都在 `./data`（`token` + `usage.db`），删容器不丢。
 
-### 如果开了代理（FlClash / Clash / Surge / OrbStack）
+### 如果开了代理（FlClash / Clash 等
 
 容器流量会跟着宿主机的系统代理走，而学校会拒绝代理节点的出口 IP。
 症状很好认：**宿主机 `curl` 返回 200，容器里 TLS 握手却被重置 / `/health` 报 `ConnectError`**。
@@ -168,15 +161,6 @@ docker compose logs -f      # 看到 "token 7.0 天后过期" 就成功了
 
    ```yaml
    - AND,((DOMAIN-SUFFIX,whut.edu.cn),(NETWORK,tcp)),DIRECT
-   ```
-
-> 其他同样写法：ClashX / Clash Verge / Mihomo 配置文件顶层 `rules:` 下加同样两行；
-> Surge 用 `DOMAIN-SUFFIX,whut.edu.cn,DIRECT`。
->
-> 不想动代理规则的话，也可以让 OrbStack 不代理容器：`orb config set network_proxy none`
-> （代价是 `docker pull` 会失败，拉镜像时要 `orb config set network_proxy auto` 切回来）。
->
-> 完整排查见 **[docs/docker.md](docs/docker.md)**：凭证三种准备方式、Linux 权限、端口占用、手机访问、换 key。
 
 ## 接入客户端
 
@@ -333,45 +317,29 @@ print(resp.choices[0].message.content)
 
 ![用量统计](https://raw.githubusercontent.com/Song-xuan-xuan/wut-deepseek2api/main/web/public/screenshots/usage.png)
 
-## 模型实测（`docs/model-capabilities.md`）
+## 模型能力速查
 
-学校三个模型的真实表现是脚本测出来的，不是抄官方参数。全套件在 `scripts/modeltest/`：
+学校三个模型的真实表现（**2026-10-26 实测，真实打到上游，不是抄官方参数**）：
 
-```bash
-# 分批跑（避免被学校限流），结果自动落到 scripts/modeltest/results/<时间戳>/
-.venv/bin/python scripts/modeltest/bench.py latency concurrency tools --models deepseek-v4-flash
-.venv/bin/python scripts/modeltest/bench.py context stream vision cache --models deepseek-v4-flash
-.venv/bin/python scripts/modeltest/bench.py robust --models deepseek-v4-flash
+| 模型 | 对话 | 流式 | 首字 TTFT | 生成速度 | 工具调用 | 上下文 | 图片 | 并发 | 定位 |
+|---|---|---|---|---|---|---|---|---|---|
+| **`deepseek-v4-flash`** | ✅ | ✅ | **≈ 2.5 s** | **≈ 27 tok/s** | ✅ | **≥ 745,080 tokens** | ❌ | 1/2/4/6 全部零失败 | **主力** |
+| `deepseek-v3` | ✅ | ✅ | ≈ 7.4 s（慢 3 倍） | ≈ 15 tok/s | ⚠️ `auto` 可以，`required` 失效 | ≥ 37,535 tokens（1 MiB 内封顶） | ❌ | 1/2/4/6 全部零失败 | 备用（慢但稳） |
+| `qwen3-235b-a22b` | ❌ | — | — | — | — | — | — | — | 上游 `429`，**不可用** |
 
-# 合并多次结果并直接刷进 docs（--publish）
-.venv/bin/python scripts/modeltest/bench.py report --results a/results.json,b/results.json --publish
-```
+**更详细的测评请看 👉 [docs/model-capabilities.md](docs/model-capabilities.md)**
 
-| 套件 | 测什么 |
-|---|---|
-| `latency` | 非流式延迟、流式首字 TTFT、生成速度 tok/s、思维链占输出比 |
-| `concurrency` | 1/2/4/6 逐级加压，成功率、P50/P95、错误码、吞吐（失败率 >50% 自动停） |
-| `context` | 按字符数喂输入，读回 `usage.prompt_tokens` 判断静默截断，找 413 边界 |
-| `context-dense` | **按 token 目标**喂高密度文本，验证码放开头、问题放结尾，测真实窗口 + 首尾召回 |
-| `tools` | 单工具 / 强制 / 多工具择一 / 结果回灌 / 流式增量 / 禁用，6 个用例 |
-| `stream` | 分片数、`[DONE]`、流内 usage、思维链、分片间隔、客户端中断后能否继续 |
-| `robust` | 极小预算、截断、stop、system 约束、JSON、非法模型、超大 max_tokens、多语言、多轮 |
-| `vision` | 发一张 8×8 PNG，验证是否真能识图 |
-| `cache` | 同一长前缀发两次，看 token 数与耗时（缓存迹象） |
 
-本轮结论（完整数据见 [docs/model-capabilities.md](docs/model-capabilities.md)）：
+### 三条实测得出的硬约束
 
-- **`deepseek-v4-flash` 是主力**：TTFT ≈ 2~2.5 s、工具调用稳定、**上下文实测 745,080 tokens 仍能召回开头信息**；
-- **`deepseek-v3`**：TTFT ≈ 7.4 s（慢 3 倍）、上下文明显更小（1 MB 请求体下只到 3.7 万 tokens）、大输入会静默失败；
-- **`qwen3-235b-a22b`**：上游 429，当前不可用；
-- **学校反代请求体上限 = 1 MiB**（`1,048,576` 字节；1.05 MB 直接 413）；
-  ⚠️ 所以「能发多少 token」取决于文本密度：英文散文 0.2 tok/字符 → 约 20 万；高密度字符 0.77 → 约 78 万；
-- **三个模型都不支持图片输入**；
-- **`tool_choice=required` 不可靠**，一律用 `auto`。
-
+| 约束 | 实测值 | 对你的影响 |
+|---|---|---|
+| **请求体上限** | `1,048,576` 字节（1 MiB），超了 nginx 直接 `413` | 一次能塞多少字由体量决定，折合 token 看密度：英文 ≈ 20 万 / 中文 ≈ 49 万 / 高密度 ASCII ≈ 78 万 |
+| **输出预算** | 简单问答 ≥ 512，多轮与 agent 单步 **≥ 1024**，工具/推理 **≥ 2048** | `flash` 的思维链占输出 token 的 **68%**，给少了会得到「200 + 空正文」，看着像模型坏了 |
+| **`tool_choice`** | 一律用 **`auto`** | `required` 不可靠：上游把工具调用写成 `content` 里的 `<｜DSML｜invoke …>` 标记，`tool_calls` 却是 `null` |
 ## 配置（`config.json`）
 
-首次启动自动生成；用面板认证过的同学基本不用改。
+首次启动自动生成；用面板认证过的不用改。
 
 | 字段 | 默认 | 说明 |
 |---|---|---|
@@ -394,10 +362,6 @@ print(resp.choices[0].message.content)
 | `usage.retention_days` | `180` | 自动清理旧记录 |
 | `access.default_rpm_limit` | `120` | 新 key 默认每分钟上限（0=不限） |
 | `access.default_daily_token_limit` | `0` | 新 key 默认每日 token 配额（0=不限） |
-
-> 关于上下文：实测输入到 ~198k tokens 上游仍正常计数，**真正的瓶颈是 1 MB 请求体**
-> （超过时学校反代返回 `413`）。所以 `contextWindow` 默认取保守值，可自行调大；
-> 细节见 [docs/model-capabilities.md](docs/model-capabilities.md)。
 
 环境变量覆盖：`WHUT_BASE_URL`、`WHUT_TOKEN`、`WHUT_TOKEN_FILE`、`WHUT_EMAIL`、`WHUT_PORT`、`WHUT_HOST`、`WHUT_CLIENT_KEY`、`WHUT_MAX_TOKENS_CAP`、`WHUT_DATA_DIR`。
 
