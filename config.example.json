@@ -51,8 +51,5 @@
     "default_daily_token_limit": 0,
     "expose_network": true
   },
-  "repo_url": "https://github.com/Song-xuan-xuan/wut-deepseek2api",
-  "model_aliases": {
-    "deepseek-v4-flash-long": "deepseek-v4-flash"
-  }
+  "repo_url": "https://github.com/Song-xuan-xuan/wut-deepseek2api"
 }

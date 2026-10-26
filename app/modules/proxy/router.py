@@ -18,7 +18,6 @@ from .retry import chat_with_retry
 from .streaming import sse_stream
 from .transform import (
     ascii_notes,
-    resolve_model_alias,
     sanitize_chat_request,
     to_openai_model_list,
 )
@@ -94,8 +93,6 @@ def attach(
 
         key_id = int(getattr(request.state, "key_id", 0) or 0)
         body, notes = sanitize_chat_request(incoming, settings)
-        body, alias_notes = resolve_model_alias(body, settings.model_aliases)
-        notes.extend(alias_notes)
         meta = (
             f"model={body.get('model')} stream={bool(body.get('stream'))} "
             f"tools={len(body.get('tools') or [])}" + (f" notes={','.join(notes)}" if notes else "")

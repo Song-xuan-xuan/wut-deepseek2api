@@ -93,8 +93,6 @@ class Settings:
     log_requests: bool = True
     models: list[Any] = field(default_factory=list)
     repo_url: str = "https://github.com/Song-xuan-xuan/wut-deepseek2api"
-    # 客户端可以用别名（例如给同一模型配两套上下文参数），代理负责映射回上游真实 id
-    model_aliases: dict[str, str] = field(default_factory=dict)
     config_path: str = ""
 
 

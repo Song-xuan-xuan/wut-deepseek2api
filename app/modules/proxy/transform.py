@@ -14,19 +14,6 @@ from ...core.settings import Settings
 _MAX_TOKEN_FIELDS = ("max_completion_tokens", "max_output_tokens")
 
 
-def resolve_model_alias(body: dict[str, Any], aliases: dict[str, str]) -> tuple[dict[str, Any], list[str]]:
-    """把客户端用的别名换成上游真实模型 id。
-
-    用途：同一模型想配两套上下文（例如「日常 200K」和「长文 700K」），
-    客户端看到的 id 不同，但上游收到的都是 deepseek-v4-flash。
-    """
-    name = str(body.get("model") or "")
-    target = aliases.get(name)
-    if not target or target == name:
-        return body, []
-    return {**body, "model": target}, [f"alias {name}->{target}"]
-
-
 def sanitize_chat_request(body: dict[str, Any], settings: Settings) -> tuple[dict[str, Any], list[str]]:
     out = dict(body)
     notes: list[str] = []
