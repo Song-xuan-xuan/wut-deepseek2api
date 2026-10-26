@@ -311,6 +311,28 @@ print(resp.choices[0].message.content)
 
 ---
 
+## 容错与重试
+
+学校这套 OpenWebUI 的失败模式比较杂，代理层统一兜住，客户端不需要自己重试：
+
+| 上游返回 | 代理怎么处理 |
+|---|---|
+| `429` / `502` / `503` / `504` | 传输层自动重试（`upstream.retries`，默认 2 次，指数退避） |
+| `401` / `403` | 先用学号续期 token 再重试；续期失败也会再试一次（学校 WAF 偶发 403） |
+| `400` 且消息像抖动（`Server Connection Error` / `Open WebUI:` / `timeout` / `overloaded` …） | 重试（`upstream.transient_retries`，默认 3 次） |
+| `400` 且是真·参数错误（`Model not found`、`max_tokens too large` …） | **不重试**，直接返回，省上游时间 |
+| `400` 但消息以 `429` 开头（学校把限流包成 400） | 还原成 `429 rate_limit_error`，并计入模型健康看门狗 |
+
+重试只发生在「拿到响应头之前」，对流式请求同样安全；每次重试都会在日志里留一行：
+
+```
+[19:58:02] chat 重试 1/3（400 'Open WebUI: Server Connection Error'）
+[19:58:02] chat 重试 2/3（400 'Open WebUI: Server Connection Error'）
+```
+
+实测：上游连续两次 400 抖动 → 客户端拿到正常结果；一直 403 → 1 + 3 次尝试后（约 2.4 s）
+返回带续期提示的 403，不会无限重试。
+
 ## 用量统计
 
 所有请求都会落库到 `data/usage.db`（SQLite），重启不清零，面板可按区间/模型/Key 查看，也能导出 CSV。
@@ -347,6 +369,7 @@ print(resp.choices[0].message.content)
 | `upstream.base_url` | 学校地址 | 支持子路径部署 |
 | `upstream.token_file` | `data/token` | 按 mtime 热加载，换 token 不用重启 |
 | `upstream.retries` | `2` | 429/502-504/网络错误重试 |
+| `upstream.transient_retries` | `3` | 400/401/403 这类「上游抖动」的重试次数 |
 | `upstream.disabled_models` | `[]` | 永不列出的模型（学校侧挂了的模型可以写进来） |
 | `upstream.circuit_breaker_threshold` / `_seconds` | `3` / `60` | 连续不可达 → 熔断冷却 |
 | `client_api_key` | `sk-whut-local` | 主 key；置空且无子 key 时不校验 |

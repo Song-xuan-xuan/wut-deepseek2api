@@ -17,7 +17,8 @@
     "circuit_breaker_threshold": 3,
     "circuit_breaker_seconds": 60,
     "credentials_file": "data/credentials.json",
-    "disabled_models": []
+    "disabled_models": [],
+    "transient_retries": 3
   },
   "default_model": "deepseek-v4-flash",
   "client_api_key": "sk-whut-local",

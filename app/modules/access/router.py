@@ -170,9 +170,21 @@ def attach(app: FastAPI, settings: Settings, keys: KeyStore) -> None:
             "curl": "curl.sh",
             "python": "example.py",
         }.get(kind, "config.txt")
+        media_type = {
+            "pi": "application/json",
+            "continue": "application/json",
+            "codex": "text/plain",
+            "claude-code": "text/x-shellscript",
+            "curl": "text/x-shellscript",
+            "python": "text/x-python",
+        }.get(kind, "text/plain")
         return PlainTextResponse(
             content,
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Cache-Control": "no-store",
+            },
         )
 
     app.include_router(router)
