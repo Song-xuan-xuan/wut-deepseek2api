@@ -21,7 +21,7 @@
   },
   "default_model": "deepseek-v4-flash",
   "client_api_key": "sk-whut-local",
-  "max_tokens_cap": 32768,
+  "max_tokens_cap": 120000,
   "strip_fields": [
     "store",
     "metadata",

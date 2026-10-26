@@ -185,8 +185,8 @@ docker compose logs -f      # 看到 "token 7.0 天后过期" 就成功了
       {
         "id": "deepseek-v4-flash",
         "name": "WHUT DeepSeek V4 Flash",
-        "contextWindow": 131072,
-        "maxTokens": 32768,
+        "contextWindow": 700000,
+        "maxTokens": 120000,
         "input": ["text", "image"],
         "reasoning": false,
         "compat": {
@@ -216,7 +216,7 @@ export ANTHROPIC_BASE_URL="http://127.0.0.1:8787"
 export ANTHROPIC_AUTH_TOKEN="sk-whut-local"
 export ANTHROPIC_MODEL="deepseek-v4-flash"
 export ANTHROPIC_SMALL_FAST_MODEL="deepseek-v4-flash"
-export CLAUDE_CODE_MAX_CONTEXT_TOKENS=131072
+export CLAUDE_CODE_MAX_CONTEXT_TOKENS=700000
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 
 claude -p "只回复两个字：成功"
@@ -350,10 +350,11 @@ print(resp.choices[0].message.content)
 | `upstream.disabled_models` | `[]` | 永不列出的模型（学校侧挂了的模型可以写进来） |
 | `upstream.circuit_breaker_threshold` / `_seconds` | `3` / `60` | 连续不可达 → 熔断冷却 |
 | `client_api_key` | `sk-whut-local` | 主 key；置空且无子 key 时不校验 |
-| `max_tokens_cap` | `32768` | 输出上限钳制 |
+| `max_tokens_cap` | `120000` | 输出上限钳制（实测 131072 通过，略留余量） |
 | `strip_fields` | `store,metadata,…` | 上游不一定认识的字段 |
 | `keep_alive_ms` | `8000` | 流式静默心跳，0=关闭 |
 | `default_model` | `deepseek-v4-flash` | 请求没带 model 的兜底 |
+| 模型窗口 | `deepseek-v4-flash`：700K 上下文 / 120K 输出 | 来自 [实测报告](docs/model-capabilities.md)：输入 745,080 tokens 仍能召回开头内容，输出 131072 通过；真实硬限制是 **1 MiB 请求体** |
 | `repo_url` | 本仓库地址 | 面板右上「GitHub」图标跳转的地址 |
 | `token_refresh.email` | 学号 | 面板认证后自动写入 |
 | `token_refresh.refresh_before_days` | `2` | 剩余小于该值就续期 |
