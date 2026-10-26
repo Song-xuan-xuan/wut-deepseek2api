@@ -14,6 +14,19 @@ from ...core.settings import Settings
 _MAX_TOKEN_FIELDS = ("max_completion_tokens", "max_output_tokens")
 
 
+def resolve_model_alias(body: dict[str, Any], aliases: dict[str, str]) -> tuple[dict[str, Any], list[str]]:
+    """把客户端用的别名换成上游真实模型 id。
+
+    用途：同一模型想配两套上下文（例如「日常 200K」和「长文 700K」），
+    客户端看到的 id 不同，但上游收到的都是 deepseek-v4-flash。
+    """
+    name = str(body.get("model") or "")
+    target = aliases.get(name)
+    if not target or target == name:
+        return body, []
+    return {**body, "model": target}, [f"alias {name}->{target}"]
+
+
 def sanitize_chat_request(body: dict[str, Any], settings: Settings) -> tuple[dict[str, Any], list[str]]:
     out = dict(body)
     notes: list[str] = []
@@ -126,3 +139,26 @@ def normalize_upstream_status(status: int, message: str) -> int:
     if status == 400 and message.strip().startswith("429"):
         return 429
     return status
+
+
+# 学校把上游的临时故障也塞进 400/403 里，这类错误重试通常就好了
+_TRANSIENT_PATTERNS = (
+    "server connection error",
+    "connection error",
+    "open webui:",
+    "upstream",
+    "timeout",
+    "timed out",
+    "overloaded",
+    "temporarily",
+    "try again",
+    "bad gateway",
+    "service unavailable",
+    "internal error",
+)
+
+
+def looks_transient(message: str) -> bool:
+    """粗判一条上游错误是不是“重试可能成功”的临时故障。"""
+    text = (message or "").lower()
+    return any(pattern in text for pattern in _TRANSIENT_PATTERNS)

@@ -33,14 +33,32 @@ def is_loopback(request: Request) -> bool:
     return host in ("127.0.0.1", "::1", "localhost", "")
 
 
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]", "0.0.0.0"}
+
+
+def host_is_local(request: Request) -> bool:
+    """用户是不是从本机地址访问的（看 Host 头）。
+
+    Docker / OrbStack 做了端口转发，容器内看到的 `request.client.host` 是网桥地址
+    （172.x / 192.168.x），不是 127.0.0.1，所以只看来源 IP 会把本机浏览器误判成远程。
+    """
+    host = (request.headers.get("host") or "").split(":")[0].strip().lower()
+    return host in LOCAL_HOSTS
+
+
 def make_guard(settings, client_api_key: str):
-    """面板接口的统一鉴权：本机放行；远程要求 Bearer key。"""
+    """面板接口的统一鉴权：本机放行；远程要求 Bearer key（或在 URL 上带 ?k=）。"""
 
     def allowed(request: Request) -> bool:
-        if is_loopback(request) or not client_api_key:
+        if not client_api_key:
+            return True
+        if is_loopback(request) or host_is_local(request):
             return True
         auth = request.headers.get("authorization", "")
         bearer = auth[7:] if auth.lower().startswith("bearer ") else ""
-        return bearer == client_api_key or request.headers.get("x-api-key") == client_api_key
+        if bearer == client_api_key or request.headers.get("x-api-key") == client_api_key:
+            return True
+        # 浏览器直接下载/跳转时带不了自定义头，允许用 ?k= 传（面板的下载链接就是这么做的）
+        return request.query_params.get("k") == client_api_key
 
     return allowed

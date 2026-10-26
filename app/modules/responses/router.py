@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from ...core.logging import log, noop
 from ...core.settings import Settings
 from ...providers.base import Provider, ProviderError
+from ..proxy.retry import chat_with_retry
 from ..proxy.transform import sanitize_chat_request
 from ..usage.store import UsageStore
 from .convert import (
@@ -57,12 +58,9 @@ def attach(
 
         meta = f"responses model={openai_body.get('model')} stream={bool(openai_body.get('stream'))}"
         try:
-            resp = await provider.chat(openai_body)
-            if resp.status_code in (401, 403):
-                auth = getattr(app.state, "auth", None)
-                if auth is not None and await auth.refresh("Responses 401/403"):
-                    await resp.aclose()
-                    resp = await provider.chat(openai_body)
+            resp, status, message = await chat_with_retry(
+                app, openai_body, notes=notes, req_log=req_log, tag="responses"
+            )
         except ProviderError as exc:
             store.record(
                 model=str(openai_body.get("model") or ""),
@@ -76,27 +74,18 @@ def attach(
             )
             return JSONResponse(error_body(exc.message), status_code=exc.status)
 
-        if resp.status_code >= 400:
-            text = (await resp.aread()).decode("utf-8", "replace")
-            await resp.aclose()
-            message = text[:500]
-            try:
-                data = json.loads(text)
-                message = data.get("detail") or (data.get("error") or {}).get("message") or message
-            except (json.JSONDecodeError, AttributeError):
-                pass
+        if resp is None:
             store.record(
                 model=str(openai_body.get("model") or ""),
-                status=resp.status_code,
+                status=status,
                 ms=(time.time() - started) * 1000,
                 stream=bool(openai_body.get("stream")),
                 tools=len(openai_body.get("tools") or []),
                 notes=notes,
-                error=str(message)[:500],
+                error=message,
                 key_id=key_id,
             )
-            req_log(f"POST /v1/responses {resp.status_code} {int((time.time() - started) * 1000)}ms {meta}")
-            return JSONResponse(error_body(str(message)), status_code=resp.status_code)
+            return JSONResponse(error_body(message), status_code=status)
 
         content_type = resp.headers.get("content-type", "")
         streaming = "event-stream" in content_type or (

@@ -185,8 +185,8 @@ docker compose logs -f      # 看到 "token 7.0 天后过期" 就成功了
       {
         "id": "deepseek-v4-flash",
         "name": "WHUT DeepSeek V4 Flash",
-        "contextWindow": 700000,
-        "maxTokens": 120000,
+        "contextWindow": 200000,
+        "maxTokens": 32000,
         "input": ["text", "image"],
         "reasoning": false,
         "compat": {
@@ -354,7 +354,8 @@ print(resp.choices[0].message.content)
 | `strip_fields` | `store,metadata,…` | 上游不一定认识的字段 |
 | `keep_alive_ms` | `8000` | 流式静默心跳，0=关闭 |
 | `default_model` | `deepseek-v4-flash` | 请求没带 model 的兜底 |
-| 模型窗口 | `deepseek-v4-flash`：700K 上下文 / 120K 输出 | 来自 [实测报告](docs/model-capabilities.md)：高熵文本下输入 745,080 tokens 仍能召回开头内容，输出 131072 通过 |
+| 模型窗口 | 日常 `deepseek-v4-flash`：**200K 上下文 / 32K 输出**；长文 `deepseek-v4-flash-long`：**700K / 120K** | 模型窗口 ≥ 745,080 tokens（实测，见 [docs/model-capabilities.md](docs/model-capabilities.md)），但单次请求体被限制在 1 MiB，普通文本只装得下约 20 万 tokens，所以日常按 200K 配，避免长会话撞 413 |
+| `model_aliases` | `{"deepseek-v4-flash-long": "deepseek-v4-flash"}` | 给同一模型起别名，客户端可配两套上下文参数，代理负责映射回上游真实 id |
 | ⚠️ 请求体硬限制 | **1 MiB** | 每次请求都要把「系统提示 + 全部历史 + 工具定义」整包发出去，字节超 1 MiB 会被学校反代 413。**中文约 20 万 tokens、英文散文也约 20 万**（只有高熵代码类文本能接近 78 万），所以长会话实际可用输入 ≈ 20 万 tokens，而不是 700K |
 | `repo_url` | 本仓库地址 | 面板右上「GitHub」图标跳转的地址 |
 | `token_refresh.email` | 学号 | 面板认证后自动写入 |

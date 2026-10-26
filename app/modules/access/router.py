@@ -7,6 +7,7 @@ import socket
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, Request
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from ...core.settings import Settings
 from ..shared import error_payload, error_response, make_guard
@@ -42,7 +43,17 @@ def attach(app: FastAPI, settings: Settings, keys: KeyStore) -> None:
     guard = make_guard(settings, settings.client_api_key)
 
     def blocked(request: Request):
-        return None if guard(request) else error_response("需要本地 API key", 401)
+        if guard(request):
+            return None
+        return JSONResponse(
+            error_payload(
+                "面板接口需要 API key：从本机 127.0.0.1 打开面板，"
+                "或在 URL 上加 ?k=<config.json 里的 client_api_key>",
+                401,
+                auth_hint=False,
+            ),
+            status_code=401,
+        )
 
     def base_url(request: Request) -> str:
         """面板/客户端应该用的地址：本机监听 + 当前端口。"""
@@ -159,8 +170,6 @@ def attach(app: FastAPI, settings: Settings, keys: KeyStore) -> None:
             "curl": "curl.sh",
             "python": "example.py",
         }.get(kind, "config.txt")
-        from fastapi.responses import PlainTextResponse
-
         return PlainTextResponse(
             content,
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},

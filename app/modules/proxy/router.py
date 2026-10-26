@@ -14,13 +14,13 @@ from ...core.settings import Settings
 from ...providers.base import Provider, ProviderError
 from ..shared import error_response
 from ..usage.store import UsageStore
+from .retry import chat_with_retry
 from .streaming import sse_stream
 from .transform import (
     ascii_notes,
-    normalize_upstream_status,
+    resolve_model_alias,
     sanitize_chat_request,
     to_openai_model_list,
-    upstream_error_message,
 )
 
 MAX_BODY_BYTES = 1024 * 1024  # 学校反代在 ~1MB 请求体处返回 413，提前拦下并说明原因
@@ -94,18 +94,18 @@ def attach(
 
         key_id = int(getattr(request.state, "key_id", 0) or 0)
         body, notes = sanitize_chat_request(incoming, settings)
+        body, alias_notes = resolve_model_alias(body, settings.model_aliases)
+        notes.extend(alias_notes)
         meta = (
             f"model={body.get('model')} stream={bool(body.get('stream'))} "
             f"tools={len(body.get('tools') or [])}" + (f" notes={','.join(notes)}" if notes else "")
         )
 
+        # 上游偶发 400/403（学校把网关故障塞进这两个码）+ token 过期，统一走重试
         try:
-            resp = await provider.chat(body)
-            if resp.status_code in (401, 403):
-                auth_service = getattr(app.state, "auth", None)
-                if auth_service is not None and await auth_service.refresh("上游 401/403"):
-                    await resp.aclose()
-                    resp = await provider.chat(body)
+            resp, status, message = await chat_with_retry(
+                app, body, notes=notes, req_log=req_log, tag="chat"
+            )
         except ProviderError as exc:
             store.record(
                 model=str(body.get("model") or ""),
@@ -117,19 +117,13 @@ def attach(
                 error=exc.message,
                 key_id=key_id,
             )
-            req_log(f"POST /v1/chat/completions {exc.status} {int((time.time() - started) * 1000)}ms {meta} {exc.message}")
+            req_log(
+                f"POST /v1/chat/completions {exc.status} "
+                f"{int((time.time() - started) * 1000)}ms {meta} {exc.message}"
+            )
             return error_response(exc.message, exc.status)
 
-        if resp.status_code >= 400:
-            text = (await resp.aread()).decode("utf-8", "replace")
-            await resp.aclose()
-            try:
-                data = json.loads(text)
-            except json.JSONDecodeError:
-                data = None
-            message = upstream_error_message(resp.status_code, data, text)
-            status = normalize_upstream_status(resp.status_code, message)
-            app.state.model_guard.record_failure(str(body.get("model") or ""), status)
+        if resp is None:
             store.record(
                 model=str(body.get("model") or ""),
                 status=status,
@@ -141,8 +135,8 @@ def attach(
                 key_id=key_id,
             )
             req_log(
-                f"POST /v1/chat/completions {resp.status_code} {int((time.time() - started) * 1000)}ms "
-                f"{meta} upstream-error={message[:120]!r}"
+                f"POST /v1/chat/completions {status} "
+                f"{int((time.time() - started) * 1000)}ms {meta} upstream-error={message[:120]!r}"
             )
             return error_response(message, status)
 
