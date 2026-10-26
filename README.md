@@ -137,10 +137,46 @@ docker compose logs -f      # 看到 "token 7.0 天后过期" 就成功了
 
 数据都在 `./data`（`token` + `usage.db`），删容器不丢。
 
-> ⚠️ **本机开着代理（FlClash / Clash / Surge）时，容器会连不上学校**：容器流量默认跟随 macOS 系统代理，
-> 而学校拒绝代理节点出口 IP（症状：宿主机 `curl` 200，容器 TLS 被重置）。
-> 在代理软件里把 `whut.edu.cn` 设为 DIRECT 即可。完整排查（含 OrbStack 的 `network_proxy` 取舍、凭证三种准备方式、
-> 手机访问、权限问题）见 **[docs/docker.md](docs/docker.md)**。
+### 如果开了代理（FlClash / Clash / Surge / OrbStack）
+
+容器流量会跟着宿主机的系统代理走，而学校会拒绝代理节点的出口 IP。
+症状很好认：**宿主机 `curl` 返回 200，容器里 TLS 握手却被重置 / `/health` 报 `ConnectError`**。
+
+解决办法：**在代理规则里让学校域名直连**。以 FlClash 为例，四步：
+
+1. 打开 FlClash → 左侧 **配置（Profiles）** → 找到你在用的那份 → 点右侧 **编辑（Edit / 编辑文件）**
+2. 找到 `rules:` 这一段，把下面两行**加到最前面**（缩进与 `rules:` 同级，两个空格起头）：
+
+   ```yaml
+   rules:
+     - DOMAIN-SUFFIX,whut.edu.cn,DIRECT
+     - IP-CIDR,218.197.110.99/32,DIRECT,no-resolve
+     # ↓ 以下是原本就有的规则，保持不动
+     - DOMAIN-SUFFIX,google.com,Proxy
+     ...
+   ```
+
+3. 保存（`⌘S` / 右下角保存），FlClash 会自动重载配置；没重载就点一下该配置重新应用
+4. 验证——这条命令输出 `200` 就通了：
+
+   ```bash
+   docker compose exec whut-2api python -c \
+     "import urllib.request;print(urllib.request.urlopen('https://chatcloud.whut.edu.cn/api/config',timeout=10).status)"
+   ```
+
+   如果还是超时/报错，再补一条（有些订阅会把 IP 直连写死）：
+
+   ```yaml
+   - AND,((DOMAIN-SUFFIX,whut.edu.cn),(NETWORK,tcp)),DIRECT
+   ```
+
+> 其他同样写法：ClashX / Clash Verge / Mihomo 配置文件顶层 `rules:` 下加同样两行；
+> Surge 用 `DOMAIN-SUFFIX,whut.edu.cn,DIRECT`。
+>
+> 不想动代理规则的话，也可以让 OrbStack 不代理容器：`orb config set network_proxy none`
+> （代价是 `docker pull` 会失败，拉镜像时要 `orb config set network_proxy auto` 切回来）。
+>
+> 完整排查见 **[docs/docker.md](docs/docker.md)**：凭证三种准备方式、Linux 权限、端口占用、手机访问、换 key。
 
 ## 接入客户端
 
@@ -315,7 +351,8 @@ print(resp.choices[0].message.content)
 |---|---|
 | `latency` | 非流式延迟、流式首字 TTFT、生成速度 tok/s、思维链占输出比 |
 | `concurrency` | 1/2/4/6 逐级加压，成功率、P50/P95、错误码、吞吐（失败率 >50% 自动停） |
-| `context` | 从小到大喂输入，读回 `usage.prompt_tokens` 判断静默截断，找 413 边界 |
+| `context` | 按字符数喂输入，读回 `usage.prompt_tokens` 判断静默截断，找 413 边界 |
+| `context-dense` | **按 token 目标**喂高密度文本，验证码放开头、问题放结尾，测真实窗口 + 首尾召回 |
 | `tools` | 单工具 / 强制 / 多工具择一 / 结果回灌 / 流式增量 / 禁用，6 个用例 |
 | `stream` | 分片数、`[DONE]`、流内 usage、思维链、分片间隔、客户端中断后能否继续 |
 | `robust` | 极小预算、截断、stop、system 约束、JSON、非法模型、超大 max_tokens、多语言、多轮 |
@@ -324,10 +361,11 @@ print(resp.choices[0].message.content)
 
 本轮结论（完整数据见 [docs/model-capabilities.md](docs/model-capabilities.md)）：
 
-- **`deepseek-v4-flash` 是主力**：TTFT ≈ 2.5 s、27 tok/s、上下文实测 20 万 tokens、工具调用稳定；
-- **`deepseek-v3`**：TTFT ≈ 7.4 s（慢 3 倍）、上下文仅 3.7 万 tokens、大输入会静默失败；
+- **`deepseek-v4-flash` 是主力**：TTFT ≈ 2~2.5 s、工具调用稳定、**上下文实测 745,080 tokens 仍能召回开头信息**；
+- **`deepseek-v3`**：TTFT ≈ 7.4 s（慢 3 倍）、上下文明显更小（1 MB 请求体下只到 3.7 万 tokens）、大输入会静默失败；
 - **`qwen3-235b-a22b`**：上游 429，当前不可用；
-- **学校反代请求体上限 ≈ 1 MB**（0.99 MB 通过，1.05 MB 直接 413）；
+- **学校反代请求体上限 = 1 MiB**（`1,048,576` 字节；1.05 MB 直接 413）；
+  ⚠️ 所以「能发多少 token」取决于文本密度：英文散文 0.2 tok/字符 → 约 20 万；高密度字符 0.77 → 约 78 万；
 - **三个模型都不支持图片输入**；
 - **`tool_choice=required` 不可靠**，一律用 `auto`。
 

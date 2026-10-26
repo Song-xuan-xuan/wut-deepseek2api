@@ -184,15 +184,29 @@ docker compose restart
 
 #### 方案 A（推荐）：代理软件里让学校域名直连
 
-FlClash / Clash Verge / Surge 等都一样，加两条规则（放最前面）：
+FlClash / Clash Verge / Surge 等都一样，加两条规则（放最前面）。
 
-```yaml
-rules:
-  - DOMAIN-SUFFIX,whut.edu.cn,DIRECT
-  - IP-CIDR,218.197.110.99/32,DIRECT,no-resolve
-```
+**FlClash 图形界面操作**：
 
-保存并重载配置，然后验证：
+1. 左侧 **配置（Profiles）** → 选你在用的那份 → 点 **编辑（Edit）**
+2. 文件里搜 `rules:`，紧跟其后、缩进两个空格加：
+
+   ```yaml
+   rules:
+     - DOMAIN-SUFFIX,whut.edu.cn,DIRECT
+     - IP-CIDR,218.197.110.99/32,DIRECT,no-resolve
+     # —— 原有规则保持不动 ——
+     - DOMAIN-SUFFIX,google.com,Proxy
+   ```
+
+3. 保存 → 回配置列表点一下该配置重新应用（或 `⌘,` 里重载）
+4. 生效判断：FlClash 的「连接」页里，访问 `chatcloud.whut.edu.cn` 那一行规则列应显示 `DIRECT`
+
+> 直接编辑配置文件也可以（FlClash 在 `~/Library/Application Support/io.github.flclash/`，
+> ClashX 在 `~/.config/clash/`，Clash Verge 在 `~/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/profiles/`），
+> 改完记得让客户端重载。
+
+然后验证：
 
 ```bash
 docker compose exec whut-2api python -c \
