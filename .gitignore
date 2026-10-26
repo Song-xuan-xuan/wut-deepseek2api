@@ -12,6 +12,9 @@ venv/
 __pycache__/
 *.py[cod]
 
+# 本地开发用（不随仓库发布）
+tests/
+
 # 前端
 web/node_modules/
 
