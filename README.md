@@ -311,6 +311,26 @@ print(resp.choices[0].message.content)
 
 ---
 
+## 用量统计为什么是 0？
+
+统计写在 `data/usage.db`（SQLite）。**如果这个文件被写坏，代理会自动把它改名留档
+（`usage.db.corrupt-<时间戳>`）并重建空库**，同时 `/health` 的 `warnings` 和面板「系统信息」
+都会显示提示 —— 不会再出现「面板一直是 0 却毫无提示」的情况。
+
+常见成因都是「同一时刻有多个进程写同一个库」：
+
+- 本地源码和 Docker 容器同时在跑（`docker compose ps` 和 `lsof -ti:8787` 都查一下，只留一个）
+- 容器 `--force-recreate` / `down` 时正好有请求在写
+- 直接在宿主机用别的工具打开 `data/usage.db` 又强行中断
+
+处理：
+
+```bash
+docker compose stop
+mv data/usage.db.corrupt-* /tmp/         # 想留证据就备份到别处
+docker compose up -d                      # 会新建一个干净的库
+```
+
 ## 容错与重试
 
 学校这套 OpenWebUI 的失败模式比较杂，代理层统一兜住，客户端不需要自己重试：

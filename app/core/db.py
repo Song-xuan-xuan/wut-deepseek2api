@@ -78,6 +78,8 @@ class Database:
         self._conn: sqlite3.Connection | None = None
         self._lock = threading.RLock()
         self.last_error: str | None = None
+        # 数据库损坏时把旧文件改名留档、再建新库，避免「统计静默归零」
+        self.recovered_from: str | None = None
 
     # ------------------------------------------------------------ 生命周期
 
@@ -89,23 +91,54 @@ class Database:
         if not self.enabled:
             return
         try:
-            parent = os.path.dirname(self.path)
-            if parent:
-                os.makedirs(parent, exist_ok=True)
-            conn = sqlite3.connect(self.path, check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=NORMAL")
-            conn.executescript(SCHEMA)
-            self._conn = conn
-            self._restrict_permissions()
-            self._migrate()
-            conn.executescript(INDEXES)
-            conn.commit()
-            self._restrict_permissions()
-        except sqlite3.Error as exc:
+            self._connect()
+        except sqlite3.DatabaseError as exc:
             self.last_error = f"{type(exc).__name__}: {exc}"
+            if not self._recover_corrupt():
+                log(f"数据库不可用：{self.last_error}")
+
+    def _connect(self) -> None:
+        parent = os.path.dirname(self.path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        conn = sqlite3.connect(self.path, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.executescript(SCHEMA)
+        self._conn = conn
+        self._restrict_permissions()
+        self._migrate()
+        conn.executescript(INDEXES)
+        conn.commit()
+        self._restrict_permissions()
+
+    def _recover_corrupt(self) -> bool:
+        """数据库文件损坏（被其它进程写坏等）：改名留档，重新建一个空库。
+
+        宁可丢历史统计，也不能让服务带着一个「每次写入都失败」的库继续跑 ——
+        那样面板会一直显示 0，用户以为统计坏了却看不到任何报错。
+        """
+        if not self.path or not os.path.isfile(self.path):
             log(f"数据库不可用：{self.last_error}")
+            return False
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        broken = f"{self.path}.corrupt-{stamp}"
+        try:
+            self.close()
+            os.replace(self.path, broken)
+            for suffix in ("-wal", "-shm"):
+                sidecar = self.path + suffix
+                if os.path.isfile(sidecar):
+                    os.replace(sidecar, broken + suffix)
+            self._connect()
+        except (OSError, sqlite3.Error) as exc:
+            log(f"数据库损坏且无法重建：{exc}")
+            return False
+        self.recovered_from = broken
+        self.last_error = None
+        log(f"⚠️ 数据库文件损坏，已改名为 {os.path.basename(broken)} 并新建空库（历史统计丢失）")
+        return True
 
     def _restrict_permissions(self) -> None:
         """库里有明文分发 key，权限收到 600（WAL/SHM 同样处理）。"""
@@ -171,6 +204,7 @@ class Database:
             "available": self.available,
             "path": self.path,
             "last_error": self.last_error,
+            "recovered_from": self.recovered_from,
             "size_bytes": os.path.getsize(self.path) if self.path and os.path.isfile(self.path) else 0,
         }
 

@@ -55,6 +55,11 @@ class UsageStore:
     def last_error(self) -> str | None:
         return self.db.last_error
 
+    @property
+    def recovered_from(self) -> str | None:
+        """数据库损坏时被改名留档的旧文件路径（正常时为空）。"""
+        return getattr(self.db, "recovered_from", None)
+
     def connect(self) -> None:
         self.db.connect()
         self._prune()

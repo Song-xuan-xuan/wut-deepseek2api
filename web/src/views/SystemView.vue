@@ -70,6 +70,14 @@
               </template>
               <span v-else class="muted">无</span>
             </div>
+            <div class="k">统计库</div>
+            <div class="v">
+              <span v-if="state.info?.usage?.available" class="ok">正常 · {{ state.info.usage.db_path }}</span>
+              <span v-else class="bad">不可用（{{ state.info?.usage?.last_error || '未知' }}）</span>
+              <div v-if="state.info?.usage?.recovered_from" class="muted small">
+                曾损坏并已重建空库，旧文件：{{ state.info.usage.recovered_from }}
+              </div>
+            </div>
             <div class="k">健康检查</div>
             <div class="v"><a href="/health" target="_blank" rel="noreferrer">/health</a></div>
             <div class="k">接口文档</div>

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
 
@@ -112,7 +113,18 @@ def attach(app: FastAPI, settings: Settings, provider: Provider) -> None:
             # 仪表盘的 24 小时折线从这里取（前端优先用 /health，缺失时才会退回 usage?range=7d 的日粒度数据）
             "series_24h": store.series("24h"),
             "db_path": shorten_path(store.db_path),
+            "last_error": store.last_error,
+            "recovered_from": shorten_path(getattr(store, "recovered_from", "") or ""),
         }
+        if not store.available:
+            result.setdefault("warnings", []).append(
+                f"统计库不可用（{store.last_error or '未知原因'}），用量不会被记录"
+            )
+        recovered = getattr(store, "recovered_from", "") or ""
+        if recovered:
+            result.setdefault("warnings", []).append(
+                f"统计库曾损坏，已重建空库（旧文件留档为 {os.path.basename(recovered)}）"
+            )
         if token.get("expiring_soon"):
             result.setdefault("warnings", []).append(token.get("hint"))
         if auth.enabled and auth.last_error:
