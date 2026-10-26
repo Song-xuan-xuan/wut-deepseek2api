@@ -122,67 +122,25 @@ data/
 
 ### 二、Docker 部署（推荐）
 
-适合：日常使用。不用装 Python、不污染系统、`restart: unless-stopped` 自动重启。
-
-**① 准备环境**
+不装 Python，只要 `docker` + `docker compose`：
 
 ```bash
-docker --version           # Docker Desktop 或 Docker Engine
-docker compose version     # Compose v2
-```
+git clone https://github.com/Song-xuan-xuan/wut-deepseek2api.git
+cd wut-deepseek2api
 
-**② 准备凭证（二选一）**
-
-- **推荐**：先用「本地开发」跑一次、在面板里认证好——容器直接挂载同一个 `data/` 目录，无需重复认证；
-- **或者**直接用学号让容器自己换：
-
-  ```bash
-  cp .env.example .env
-  # 编辑 .env：WHUT_EMAIL=<你的学号>
-  ```
-
-**③ 启动**
-
-```bash
+cp .env.example .env        # 填 WHUT_EMAIL=你的学号（也可以先本地认证一次，凭证落在 ./data/token）
 docker compose up -d --build
-docker compose logs -f          # 看到 "whut-2api → http://0.0.0.0:8787/v1" 即成功
+docker compose logs -f      # 看到 "token 7.0 天后过期" 就成功了
 ```
 
-不用 compose 也可以：
+验证：`curl --noproxy '*' -s 127.0.0.1:8787/health`，然后打开 <http://127.0.0.1:8787/dashboard>。
 
-```bash
-docker build -t whut-2api .
-docker run -d --name whut-2api \
-  -p 127.0.0.1:8787:8787 \
-  -e WHUT_EMAIL=<你的学号> \
-  -v "$PWD/data:/app/data" \
-  --restart unless-stopped \
-  whut-2api
-```
+数据都在 `./data`（`token` + `usage.db`），删容器不丢。
 
-**④ 验证**
-
-```bash
-curl --noproxy '*' -s 127.0.0.1:8787/health | python3 -m json.tool
-# 然后浏览器打开 http://127.0.0.1:8787/dashboard
-```
-
-**⑤ 运维**
-
-```bash
-docker compose restart          # 改完配置
-docker compose down             # 停止
-docker compose up -d --build    # 更新代码后重建
-docker compose logs -f          # 看日志
-```
-
-数据（`token` + `usage.db`）都在宿主机的 `./data` 目录，**删容器不丢**。
-
-> **⚠️ macOS + Clash/Surge TUN 模式的坑**：容器流量会走代理节点，学校会直接 RST（实测）。
-> 要么在代理软件里给 `whut.edu.cn` 加 `DIRECT` 规则，要么改用本地开发方式。
-> 部署到没有代理的 Linux 服务器则完全没这个问题。
-
----
+> ⚠️ **本机开着代理（FlClash / Clash / Surge）时，容器会连不上学校**：容器流量默认跟随 macOS 系统代理，
+> 而学校拒绝代理节点出口 IP（症状：宿主机 `curl` 200，容器 TLS 被重置）。
+> 在代理软件里把 `whut.edu.cn` 设为 DIRECT 即可。完整排查（含 OrbStack 的 `network_proxy` 取舍、凭证三种准备方式、
+> 手机访问、权限问题）见 **[docs/docker.md](docs/docker.md)**。
 
 ## 接入客户端
 
@@ -428,7 +386,7 @@ wut-deepseek2api/
 │   ├── public/               架构动画图 · 截图
 │   └── dist/                 构建产物（已提交，运行不需要 Node）
 ├── scripts/modeltest/        模型实测（bench · suites · report）+ results/
-├── docs/                     说明文档（模型与协议实测报告）
+├── docs/                     说明文档（Docker 部署手册、模型与协议实测报告）
 ├── data/                     运行时数据（token、用量库，已忽略）
 ├── Dockerfile · docker-compose.yml · .env.example
 ├── requirements.txt · config.example.json

@@ -4,7 +4,9 @@ services:
     image: ghcr.io/song-xuan-xuan/wut-deepseek2api:latest
     container_name: whut-2api
     env_file:
-      - .env
+      # .env 不存在也能启动（凭证也可以只放在 ./data/token 里）
+      - path: .env
+        required: false
     environment:
       WHUT_HOST: 0.0.0.0
       WHUT_PORT: "8787"
