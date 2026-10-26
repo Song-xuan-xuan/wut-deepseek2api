@@ -1,0 +1,51 @@
+{
+  "listen": {
+    "host": "127.0.0.1",
+    "port": 8787
+  },
+  "upstream": {
+    "base_url": "https://chatcloud.whut.edu.cn",
+    "chat_path": "/api/chat/completions",
+    "models_path": "/api/models",
+    "session_path": "/api/v1/auths/",
+    "config_path": "/api/config",
+    "token_file": "~/.whut-jwt",
+    "token": "",
+    "cookie": "",
+    "timeout_ms": 600000,
+    "retries": 2,
+    "circuit_breaker_threshold": 3,
+    "circuit_breaker_seconds": 60
+  },
+  "default_model": "deepseek-v4-flash",
+  "client_api_key": "sk-whut-local",
+  "max_tokens_cap": 32768,
+  "strip_fields": [
+    "store",
+    "metadata",
+    "service_tier",
+    "safety_identifier"
+  ],
+  "enable_native_tool_calling": false,
+  "keep_alive_ms": 8000,
+  "log_requests": true,
+  "models": [],
+  "token_refresh": {
+    "enabled": true,
+    "email": "",
+    "password": "",
+    "refresh_before_days": 2,
+    "check_interval_minutes": 60
+  },
+  "usage": {
+    "enabled": true,
+    "db_path": "",
+    "retention_days": 180
+  },
+  "access": {
+    "enabled": true,
+    "default_rpm_limit": 120,
+    "default_daily_token_limit": 0,
+    "expose_network": true
+  }
+}

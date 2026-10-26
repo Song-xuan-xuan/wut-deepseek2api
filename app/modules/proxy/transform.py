@@ -1,0 +1,121 @@
+"""请求/响应整形。
+
+原则：白名单式修正 —— 只动已知有毒的字段，其余原样透传。
+（错误体格式在 modules/shared.py，这里只管参数和模型列表。）
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from ...core.settings import Settings
+
+_MAX_TOKEN_FIELDS = ("max_completion_tokens", "max_output_tokens")
+
+
+def sanitize_chat_request(body: dict[str, Any], settings: Settings) -> tuple[dict[str, Any], list[str]]:
+    out = dict(body)
+    notes: list[str] = []
+
+    # 1. 统一 max_tokens（OpenWebUI / DeepSeek 只认这个）
+    for field in _MAX_TOKEN_FIELDS:
+        if field in out:
+            if out.get("max_tokens") is None:
+                out["max_tokens"] = out.pop(field)
+                notes.append(f"{field}->max_tokens")
+            else:
+                out.pop(field, None)
+
+    # 2. 钳制输出上限
+    max_tokens = out.get("max_tokens")
+    if settings.max_tokens_cap and isinstance(max_tokens, int) and max_tokens > settings.max_tokens_cap:
+        notes.append(f"max_tokens {max_tokens}->{settings.max_tokens_cap}")
+        out["max_tokens"] = settings.max_tokens_cap
+
+    # 3. 剔除上游不一定认识的字段
+    for field in settings.strip_fields:
+        if field in out:
+            out.pop(field)
+            notes.append(f"drop {field}")
+
+    # 4. 需要时打开原生工具调用（仅 Ollama 连接有意义）
+    if settings.enable_native_tool_calling and out.get("tools"):
+        params = dict(out.get("params") or {})
+        params["function_calling"] = "native"
+        out["params"] = params
+        notes.append("function_calling=native")
+
+    if not out.get("model") and settings.default_model:
+        out["model"] = settings.default_model
+
+    return out, notes
+
+
+def _pick_items(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [x for x in payload if isinstance(x, dict)]
+    if isinstance(payload, dict):
+        for key in ("data", "models"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return [x for x in value if isinstance(x, dict)]
+    return []
+
+
+def to_openai_model_list(payload: Any, extra: list[Any] | None = None) -> dict[str, Any]:
+    """兼容 OpenWebUI 的 {data:[...]} / 裸数组，以及 Ollama 的 {models:[...]}。"""
+    seen: set[str] = set()
+    data: list[dict[str, Any]] = []
+
+    def push(item: Any) -> None:
+        if isinstance(item, str):
+            item = {"id": item}
+        if not isinstance(item, dict):
+            return
+        model_id = item.get("id") or item.get("model") or item.get("name")
+        if not model_id or model_id in seen:
+            return
+        seen.add(model_id)
+        data.append(
+            {
+                "id": model_id,
+                "object": "model",
+                "created": int(item.get("created") or 0) or 1_700_000_000,
+                "owned_by": item.get("owned_by") or "whut",
+                "name": item.get("name") or model_id,
+            }
+        )
+
+    for item in _pick_items(payload):
+        push(item)
+    for item in extra or []:
+        push(item)
+    return {"object": "list", "data": data}
+
+
+def upstream_error_message(status: int, data: Any, text: str) -> str:
+    if isinstance(data, dict):
+        error = data.get("error")
+        if isinstance(error, dict) and error.get("message"):
+            return str(error["message"])
+        if isinstance(error, str) and error:
+            return error
+        detail = data.get("detail")
+        if isinstance(detail, str):
+            return detail
+        if isinstance(detail, list):
+            parts = []
+            for item in detail:
+                parts.append(str(item.get("msg") if isinstance(item, dict) else item))
+            return "; ".join(parts)
+    raw = (text or "").strip()
+    if raw and not raw.startswith("<"):
+        return raw[:500]
+    return f"上游返回 {status}"
+
+
+def ascii_notes(notes: list[str]) -> str:
+    """HTTP 头只能是 latin1，notes 里的中文/箭头要剥掉。"""
+    joined = ",".join(notes)
+    return re.sub(r"[^\x20-\x7E]", "", joined).replace(",,", ",")

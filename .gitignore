@@ -1,0 +1,21 @@
+# 凭证与数据
+config.json
+.env
+data/
+token
+*.jwt
+~/.whut-jwt
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# 前端
+web/node_modules/
+
+# 其它
+.pi/
+.DS_Store
+*.log
