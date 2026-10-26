@@ -9,8 +9,8 @@
 ## 原理
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Song-xuan-xuan/wut-deepseek2api/main/docs/architecture-dark.svg">
-  <img src="https://raw.githubusercontent.com/Song-xuan-xuan/wut-deepseek2api/main/docs/architecture-light.svg" alt="whut-2api 工作原理：AI 客户端 → 本地代理（注入 token / 续期 / 统计 / 分发）→ 学校 OpenWebUI → DeepSeek" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Song-xuan-xuan/wut-deepseek2api/main/web/public/architecture-dark.svg">
+  <img src="https://raw.githubusercontent.com/Song-xuan-xuan/wut-deepseek2api/main/web/public/architecture-light.svg" alt="whut-2api 工作原理：AI 客户端 → 本地代理（注入 token / 续期 / 统计 / 分发）→ 学校 OpenWebUI → DeepSeek" width="100%">
 </picture>
 
 ### 为什么需要这一层
@@ -28,10 +28,10 @@
 | 步骤 | 发生了什么 |
 |---|---|
 | ① | 客户端用**本地假 key**（`sk-whut-local`）请求 `http://127.0.0.1:8787/v1/...` |
-| ② | 代理**注入真实的学校 JWT**（从 `~/.whut-jwt` 读，按修改时间热加载，换 token 不用重启） |
+| ② | 代理**注入真实的学校 JWT**（从 `data/token` 读，按修改时间热加载，换 token 不用重启） |
 | ③ | 代理**修正参数**：`max_completion_tokens → max_tokens`、钳制输出上限、剔除 `store`/`metadata` 等上游不认识的字段 |
 | ④ | 转发到 `https://chatcloud.whut.edu.cn/api/chat/completions`，学校再转给 DeepSeek |
-| ⑤ | 响应**字节级透传**回来（流式不拆包、不重组），同时把 usage / 耗时**落库**到 SQLite |
+| ⑤ | 响应**字节级透传**回来（流式不拆包、不重组），同时把 usage / 耗时**落库**到 `data/usage.db`（SQLite） |
 | ⑥ | 客户端拿到的就是标准响应：OpenAI JSON / SSE、Anthropic 事件流或 Responses 事件流，工具调用原样可用 |
 
 ### 三个协议入口，同一份上游
@@ -94,24 +94,27 @@
 git clone https://github.com/Song-xuan-xuan/wut-deepseek2api.git
 cd wut-deepseek2api
 
-./start.sh          # macOS / Linux：自动建 venv、装依赖、生成 config.json、启动
-# Windows：双击 start.bat
-```
-
-手动等价版：
-
-```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-cp config.example.json config.json && chmod 600 config.json
-.venv/bin/python -m app
+.venv/bin/pip install -r requirements.txt          # Windows: .venv\Scripts\pip install -r requirements.txt
+cp config.example.json config.json                 # Windows: copy config.example.json config.json
+.venv/bin/python -m app                            # Windows: .venv\Scripts\python -m app
 ```
+
+所有运行数据都在项目目录里：
+
+```
+data/
+├── token         你的学校会话 token（600 权限）
+└── usage.db      用量统计（SQLite）
+```
+
+`data/` 已在 `.gitignore` 里，不会误传。
 
 **③ 一键认证**
 
 打开 <http://127.0.0.1:8787/dashboard> → 左侧「认证」→ 输入**学号** → 点「认证」。
 
-看到"认证成功，token 剩 7.0 天"就好了：学号写回 `config.json`，token 写到 `~/.whut-jwt`，
+看到"认证成功，token 剩 7.0 天"就好了：学号写回 `config.json`，token 写到 `data/token`，
 之后每 60 分钟检查、剩余不足 2 天自动续期——**再也不用管 token**。
 
 **④ 验证**
@@ -137,7 +140,7 @@ docker compose version     # Compose v2
 
 **② 准备凭证（二选一）**
 
-- **推荐**：先用「本地开发」那行命令跑一次、在面板里认证好——容器挂载同一个数据目录，无需重复认证；
+- **推荐**：先用「本地开发」跑一次、在面板里认证好——容器直接挂载同一个 `data/` 目录，无需重复认证；
 - **或者**直接用学号让容器自己换：
 
   ```bash
@@ -159,7 +162,7 @@ docker build -t whut-2api .
 docker run -d --name whut-2api \
   -p 127.0.0.1:8787:8787 \
   -e WHUT_EMAIL=<你的学号> \
-  -v "$HOME/.whut-2api:/home/app/.whut-2api" \
+  -v "$PWD/data:/app/data" \
   --restart unless-stopped \
   whut-2api
 ```
@@ -180,7 +183,7 @@ docker compose up -d --build    # 更新代码后重建
 docker compose logs -f          # 看日志
 ```
 
-数据（token + 用量库）都在宿主机的 `./data` 目录，**删容器不丢**。
+数据（`token` + `usage.db`）都在宿主机的 `./data` 目录，**删容器不丢**。
 
 > **⚠️ macOS + Clash/Surge TUN 模式的坑**：容器流量会走代理节点，学校会直接 RST（实测）。
 > 要么在代理软件里给 `whut.edu.cn` 加 `DIRECT` 规则，要么改用本地开发方式。
@@ -337,21 +340,11 @@ print(resp.choices[0].message.content)
 
 ---
 
-## 面板
+## 用量统计
 
-<http://127.0.0.1:8787/dashboard> —— Vue 3 + Vite，支持明暗主题（浅色 / 深色 / 跟随系统）。
+所有请求都会落库到 `data/usage.db`（SQLite），重启不清零，面板可按区间/模型/Key 查看，也能导出 CSV。
 
-| 页面 | 内容 |
-|---|---|
-| **仪表盘** | 请求数 / token / 错误 / token 剩余 / 模型数 / 续期状态，24h 面积图，客户端配置一键复制 |
-| **用量统计** | 今天·24h·7天·30天·全部，输入输出与思维链 token，p50/p95 耗时，按模型 / 按 Key 拆分，CSV 导出 |
-| **认证** | 一键认证（学号）、token 指纹、自动续期状态、手动粘贴、认证历史、失败退避 |
-| **分发 / Key** | 多 key 管理（开关 / 换 key / 删除）、每分钟限速、每日 token 配额、六种客户端模板、局域网地址 |
-| **系统** | 版本 / 监听 / 上游 / 配置路径 / 数据库、熔断状态、常用命令 |
-
-「分发 / Key」提供的现成模板：`pi` · `codex` · `claude-code` · `continue` · `curl` · `python`，可直接复制或下载。
-
----
+![用量统计](https://raw.githubusercontent.com/Song-xuan-xuan/wut-deepseek2api/main/web/public/screenshots/usage.png)
 
 ## 配置（`config.json`）
 
@@ -361,7 +354,7 @@ print(resp.choices[0].message.content)
 |---|---|---|
 | `listen.host` / `port` | `127.0.0.1:8787` | 只本机；改 `0.0.0.0` 才能局域网分发 |
 | `upstream.base_url` | 学校地址 | 支持子路径部署 |
-| `upstream.token_file` | `~/.whut-jwt` | 按 mtime 热加载，换 token 不用重启 |
+| `upstream.token_file` | `data/token` | 按 mtime 热加载，换 token 不用重启 |
 | `upstream.retries` | `2` | 429/502-504/网络错误重试 |
 | `upstream.circuit_breaker_threshold` / `_seconds` | `3` / `60` | 连续不可达 → 熔断冷却 |
 | `client_api_key` | `sk-whut-local` | 主 key；置空且无子 key 时不校验 |
@@ -372,7 +365,7 @@ print(resp.choices[0].message.content)
 | `token_refresh.email` | 学号 | 面板认证后自动写入 |
 | `token_refresh.refresh_before_days` | `2` | 剩余小于该值就续期 |
 | `token_refresh.check_interval_minutes` | `60` | 后台检查间隔 |
-| `usage.db_path` | `~/.whut-2api/usage.db` | 用量库（含 key 与认证事件） |
+| `usage.db_path` | `data/usage.db` | 用量库（含 key 与认证事件） |
 | `usage.retention_days` | `180` | 自动清理旧记录 |
 | `access.default_rpm_limit` | `120` | 新 key 默认每分钟上限（0=不限） |
 | `access.default_daily_token_limit` | `0` | 新 key 默认每日 token 配额（0=不限） |
@@ -381,34 +374,12 @@ print(resp.choices[0].message.content)
 
 ---
 
-## 常见问题
-
-| 现象 | 原因 | 解决 |
-|---|---|---|
-| 面板打不开 | 服务没起 / 端口改了 | 先访问 `/health` |
-| 认证报「审核尚未通过」 | 学校还没批你的申请 | 找管理员 |
-| `403 Not authenticated` | token 过期 | 面板点「立即续期」或重新认证 |
-| `400 Invalid max_tokens` | 输出上限太大 | 调小 `max_tokens_cap` |
-| 正文为空、只有思考 | 思维链吃光预算 | `max_tokens_cap` ≥ 8192 |
-| 面板显示「熔断冷却」 | 连续 3 次连不上，程序主动停手 | 等 60 秒自动恢复，别反复刷 |
-| 学校整站连不上 | 临时封禁 / 维护 | 等 30~60 分钟 |
-| `curl` 连不上但浏览器能开 | shell 里有 `http_proxy` | `curl` 加 `--noproxy '*'` |
-| Docker 里连不上学校 | 容器流量走了代理 | 加直连规则，或改用本地方式 |
-| 子 key 报 429「配额已用尽」 | 当天 token 超了 | 次日恢复，或在分发页调大配额 |
-| Claude Code 连不上 | Base URL 少了/多了 `/v1` | 填 `http://127.0.0.1:8787`（不含 `/v1`） |
-| Codex 报 unsupported API | 没走 responses 协议 | `wire_api = "responses"` |
-| Windows 上 `python` 不是命令 | 没加 PATH | 用 `py -3` |
-
-日志：前台直接看；后台 `docker compose logs -f`，或 `nohup` 的重定向文件。
-
----
-
 ## 目录
 
 ```
 wut-deepseek2api/
 ├── app/                      后端（FastAPI）
-│   ├── core/                 配置 · SQLite · 日志 · 路径
+│   ├── core/                 配置 · SQLite · 路径 · 日志
 │   ├── providers/            上游抽象 + OpenWebUI 实现
 │   ├── modules/
 │   │   ├── proxy/            /v1/chat/completions · 参数修正 · SSE 透传
@@ -421,21 +392,19 @@ wut-deepseek2api/
 │   └── main.py               组装 + 挂模块
 ├── web/                      面板（Vue 3 + Vite）
 │   ├── src/                  源码
+│   ├── public/               架构动画图 · 截图
 │   └── dist/                 构建产物（已提交，运行不需要 Node）
-├── docs/                     架构动画图（浅色 / 深色）
+├── docs/                     说明文档（模型与协议实测报告）
+├── data/                     运行时数据（token、用量库，已忽略）
 ├── Dockerfile · docker-compose.yml · .env.example
 ├── requirements.txt · config.example.json
-├── start.sh · start.bat      本机一键启动
 └── LICENSE
 ```
 
----
-
 ## 免责声明
 
-- 本项目**只是复用你自己账号**的会话凭证，调用学校页面的同一个接口，属于个人自用。
-- 请勿把服务暴露到公网、勿分享 token、勿代跑或批量抓数据；**收到学校通知请立即停止**。
-- 学校关闭了个人 API Key 说明对程序化访问有顾虑，本方案处于灰色地带，**风险自担**。
-- 与武汉理工大学官方无关。
+- 这是一个**个人学习项目**，用于学习 HTTP 代理、流式传输与协议转换。
+- 与**武汉理工大学官方无关**，不代表学校立场，也未获得学校授权。
+- 使用时请遵守学校的网络与信息系统管理规定，仅限个人本地使用，不要对外提供服务。
 
 MIT License · 详见 [LICENSE](./LICENSE)

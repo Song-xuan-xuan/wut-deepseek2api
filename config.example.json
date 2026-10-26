@@ -9,13 +9,14 @@
     "models_path": "/api/models",
     "session_path": "/api/v1/auths/",
     "config_path": "/api/config",
-    "token_file": "~/.whut-jwt",
+    "token_file": "data/token",
     "token": "",
     "cookie": "",
     "timeout_ms": 600000,
     "retries": 2,
     "circuit_breaker_threshold": 3,
-    "circuit_breaker_seconds": 60
+    "circuit_breaker_seconds": 60,
+    "credentials_file": "data/credentials.json"
   },
   "default_model": "deepseek-v4-flash",
   "client_api_key": "sk-whut-local",

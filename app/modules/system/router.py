@@ -5,11 +5,11 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from ...core.paths import ROOT
+from ...core.paths import ROOT, shorten_path
 from ...core.settings import Settings
 from ...providers.base import Provider
 from ..shared import is_loopback
@@ -82,7 +82,7 @@ def attach(app: FastAPI, settings: Settings, provider: Provider) -> None:
         result["usage"] = {
             "available": store.available,
             "today": store.summary("today")["totals"],
-            "db_path": store.db_path,
+            "db_path": shorten_path(store.db_path),
         }
         if token.get("expiring_soon"):
             result.setdefault("warnings", []).append(token.get("hint"))
@@ -116,7 +116,7 @@ def attach(app: FastAPI, settings: Settings, provider: Provider) -> None:
                 "default_model": settings.default_model,
                 "max_tokens_cap": settings.max_tokens_cap,
                 "keep_alive_ms": settings.keep_alive_ms,
-                "config_path": settings.config_path,
+                "config_path": shorten_path(settings.config_path),
             },
             "token": provider.token_status(),
             "auth": auth.status(),
@@ -125,7 +125,7 @@ def attach(app: FastAPI, settings: Settings, provider: Provider) -> None:
             "models_error": models_error,
             "usage": {
                 "available": store.available,
-                "db_path": store.db_path,
+                "db_path": shorten_path(store.db_path),
                 "total_rows": store.total_count(),
             },
             "server_time": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -165,12 +165,19 @@ def attach(app: FastAPI, settings: Settings, provider: Provider) -> None:
         async def dashboard() -> FileResponse:
             return FileResponse(DIST / "index.html")
 
-        @app.get("/logo.svg")
-        async def logo() -> Any:
-            file = DIST / "logo.svg"
-            if file.is_file():
-                return FileResponse(file, media_type="image/svg+xml")
-            return PlainTextResponse("", status_code=404)
+        # Vite 会把 web/public/* 复制到 dist 根目录（架构图、截图、logo）
+        ALLOWED_ASSET_SUFFIXES = {".svg", ".png", ".jpg", ".webp", ".ico"}
+
+        @app.get("/{asset:path}")
+        async def static_asset(asset: str) -> Any:
+            candidate = (DIST / asset).resolve()
+            try:
+                candidate.relative_to(DIST.resolve())
+            except (ValueError, OSError):
+                raise HTTPException(status_code=404) from None
+            if not candidate.is_file() or candidate.suffix not in ALLOWED_ASSET_SUFFIXES:
+                raise HTTPException(status_code=404)
+            return FileResponse(candidate)
 
         @app.get("/favicon.ico")
         async def favicon():

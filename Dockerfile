@@ -4,7 +4,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     WHUT_HOST=0.0.0.0 \
-    WHUT_PORT=8787
+    WHUT_PORT=8787 \
+    WHUT_DATA_DIR=/app/data
 
 WORKDIR /app
 
@@ -17,7 +18,9 @@ COPY web/dist ./web/dist
 # 镜像内自带一份默认配置，可用 volume 挂载覆盖
 COPY config.example.json ./config.json
 
-RUN useradd --uid 10001 --create-home app
+RUN useradd --uid 10001 --create-home app \
+    && mkdir -p /app/data \
+    && chown -R app:app /app/data
 USER app
 
 EXPOSE 8787

@@ -10,7 +10,7 @@ services:
       WHUT_PORT: "8787"
     volumes:
       # token 与用量库都在这里，重建容器不丢
-      - ./data:/home/app/.whut-2api
+      - ./data:/app/data
     ports:
       # 默认只绑本机；要给手机/平板用，改成 "8787:8787" 并自己加鉴权
       - "127.0.0.1:8787:8787"

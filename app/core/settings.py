@@ -16,7 +16,7 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
-from .paths import data_dir
+from .paths import data_dir, migrate_legacy, resolve_path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -34,8 +34,8 @@ class UpstreamSettings:
     models_path: str = "/api/models"
     session_path: str = "/api/v1/auths/"
     config_path: str = "/api/config"
-    token_file: str = "~/.whut-jwt"
-    credentials_file: str = "~/.whut-credentials.json"
+    token_file: str = "data/token"
+    credentials_file: str = "data/credentials.json"
     token: str = ""
     cookie: str = ""
     timeout_ms: int = 600_000
@@ -58,7 +58,7 @@ class UsageSettings:
     """用量统计（SQLite 持久化）。"""
 
     enabled: bool = True
-    db_path: str = ""  # 空 = ~/.whut-2api/usage.db
+    db_path: str = ""  # 空 = <项目>/data/usage.db
     retention_days: int = 180
 
 
@@ -113,7 +113,8 @@ def _normalize_keys(data):
 
 
 def expand_home(path: str) -> str:
-    return os.path.expanduser(path) if path else path
+    """兼容旧调用：展开 ~ 并把相对路径按项目根目录解析。"""
+    return resolve_path(path) if path else path
 
 
 def load_settings(path: str | None = None) -> Settings:
@@ -163,6 +164,13 @@ def load_settings(path: str | None = None) -> Settings:
     settings.access = _build(AccessSettings, merged.get("access"))
     if not settings.usage.db_path:
         settings.usage.db_path = str(data_dir() / "usage.db")
+
+    for record in migrate_legacy():
+        print(f"[迁移] 旧数据已搬到项目目录：{record}", flush=True)
+
+    settings.upstream.token_file = resolve_path(settings.upstream.token_file)
+    settings.upstream.credentials_file = resolve_path(settings.upstream.credentials_file)
+    settings.usage.db_path = resolve_path(settings.usage.db_path)
     settings.config_path = config_path
     return settings
 

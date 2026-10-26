@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
+from ...core.paths import shorten_path
 from ...core.settings import Settings
 from ..access.store import KeyStore
 from ..shared import error_response
@@ -50,7 +51,7 @@ def attach(app: FastAPI, settings: Settings, store: UsageStore, keys: KeyStore) 
             "recent": store.recent(30, key_id=key_id),
             "models": store.models(),
             "available": store.available,
-            "db_path": store.db_path,
+            "db_path": shorten_path(store.db_path),
             "total_rows": store.total_count(),
             "last_error": store.last_error,
         }

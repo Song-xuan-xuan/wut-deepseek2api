@@ -40,7 +40,7 @@
           </div>
           <div class="row">
             <a class="btn ghost sm" :href="schoolUrl" target="_blank" rel="noreferrer">打开学校页面 ↗</a>
-            <span class="hint-text">用学号换 token 后，会写入 config.json 与 ~/.whut-jwt</span>
+            <span class="hint-text">用学号换 token 后，会写入 config.json 与 data/token</span>
           </div>
         </div>
       </div>
