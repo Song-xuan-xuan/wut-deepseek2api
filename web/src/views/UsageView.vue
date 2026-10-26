@@ -84,7 +84,11 @@
         <div class="panel">
           <div class="panel-head">
             <h2>模型成功率</h2>
-            <span class="hint">{{ modelBars.length }} 个模型</span>
+            <span class="hint">
+              {{ modelRows.length }} 个可用模型{{
+                failedOnlyModels.length ? ` · ${failedOnlyModels.length} 个全部失败` : ''
+              }}
+            </span>
           </div>
           <div class="panel-body" style="display: flex; flex-direction: column; gap: 16px">
             <div v-for="row in modelRows" :key="row.model">
@@ -101,6 +105,10 @@
                 <span class="grow" />
                 <span>{{ fmt(row.tokens) }} tok</span>
               </div>
+            </div>
+            <div v-if="failedOnlyModels.length" class="hint-text" style="margin-top: 4px">
+              全部失败（上游不可用，已被自动隔离）：
+              <span class="mono">{{ failedOnlyModels.map((r) => r.model).join('、') }}</span>
             </div>
             <div v-if="!modelRows.length" class="empty-state">
               <div class="big">▤</div>
@@ -191,16 +199,25 @@ const tokenSpark = computed(() =>
   points.value.map((point) => (point.prompt_tokens || 0) + (point.completion_tokens || 0)),
 )
 
+const allModelRows = computed(() =>
+  (state.data?.by_model || []).map((row) => ({
+    model: row.model,
+    requests: row.requests || 0,
+    errors: row.errors || 0,
+    tokens: (row.prompt_tokens || 0) + (row.completion_tokens || 0),
+    rate: row.requests ? ((row.requests - (row.errors || 0)) / row.requests) * 100 : 0,
+  })),
+)
+// 有成功记录的模型正常展示；从未成功的（上游挂了 / 模型名写错）折叠成一行提示，
+// 免得整张卡片看起来像"多了几个奇怪的模型"
 const modelRows = computed(() =>
-  (state.data?.by_model || [])
-    .map((row) => ({
-      model: row.model,
-      requests: row.requests || 0,
-      errors: row.errors || 0,
-      tokens: (row.prompt_tokens || 0) + (row.completion_tokens || 0),
-      rate: row.requests ? ((row.requests - (row.errors || 0)) / row.requests) * 100 : 0,
-    }))
+  allModelRows.value
+    .filter((row) => row.requests - row.errors > 0)
+    .sort((a, b) => b.requests - a.requests)
     .slice(0, 6),
+)
+const failedOnlyModels = computed(() =>
+  allModelRows.value.filter((row) => row.requests > 0 && row.requests - row.errors === 0),
 )
 
 const modelBars = computed(() =>
