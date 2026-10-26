@@ -77,6 +77,19 @@
 > **共同前提：必须能访问校园网**（校内 / 学校 VPN）。校外直连会超时。
 > 若本机开着 Clash / Surge 等代理，请把 `whut.edu.cn` 加进**直连规则**——学校会拒绝代理节点的出口 IP。
 
+**懒人方案**：把下面这段话直接发给你自己的 AI agent（pi / Claude Code / Cline 都行），让它替你装：
+
+```text
+帮我在本机安装并部署 https://github.com/Song-xuan-xuan/wut-deepseek2api 这个项目：
+1. git clone 到当前目录，用 python3 -m venv .venv 建虚拟环境，安装 requirements.txt
+2. 复制 config.example.json 为 config.json
+3. 后台启动 .venv/bin/python -m app（macOS/Linux），或 .venv\Scripts\python -m app（Windows）
+4. 确认 http://127.0.0.1:8787/health 返回 200，并把面板地址 http://127.0.0.1:8787/dashboard 告诉我
+5. 提醒我在面板「认证」页填学号完成认证（不需要密码）
+6. 如果端口 8787 被占用、依赖装不上、或代理导致连不上学校，请自行排查并汇报原因
+注意：必须先能访问校园网；token 和数据库都保存在项目内的 data/ 目录。
+```
+
 ### 一、本地开发
 
 适合：想改代码、调面板，或机器上不方便跑 Docker。
@@ -369,6 +382,10 @@ print(resp.choices[0].message.content)
 | `usage.retention_days` | `180` | 自动清理旧记录 |
 | `access.default_rpm_limit` | `120` | 新 key 默认每分钟上限（0=不限） |
 | `access.default_daily_token_limit` | `0` | 新 key 默认每日 token 配额（0=不限） |
+
+> 关于上下文：实测输入到 ~198k tokens 上游仍正常计数，**真正的瓶颈是 1 MB 请求体**
+> （超过时学校反代返回 `413`）。所以 `contextWindow` 默认取保守值，可自行调大；
+> 细节见 [docs/model-capabilities.md](docs/model-capabilities.md)。
 
 环境变量覆盖：`WHUT_BASE_URL`、`WHUT_TOKEN`、`WHUT_TOKEN_FILE`、`WHUT_EMAIL`、`WHUT_PORT`、`WHUT_HOST`、`WHUT_CLIENT_KEY`、`WHUT_MAX_TOKENS_CAP`、`WHUT_DATA_DIR`。
 

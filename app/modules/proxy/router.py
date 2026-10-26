@@ -15,7 +15,12 @@ from ...providers.base import Provider, ProviderError
 from ..shared import error_response
 from ..usage.store import UsageStore
 from .streaming import sse_stream
-from .transform import ascii_notes, sanitize_chat_request, to_openai_model_list, upstream_error_message
+from .transform import (
+    ascii_notes,
+    sanitize_chat_request,
+    to_openai_model_list,
+    upstream_error_message,
+)
 
 MAX_BODY_BYTES = 32 * 1024 * 1024
 MODEL_CACHE_TTL = 60.0

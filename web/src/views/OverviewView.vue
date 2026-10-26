@@ -161,12 +161,13 @@ const hourly = computed(
 const spark = computed(() => hourly.value.map((point) => point.requests || 0))
 const hourlyLabels = computed(() => hourly.value.map((point) => point.bucket))
 const hourlySeries = computed(() => [
-  { key: 'requests', label: '请求', values: hourly.value.map((point) => point.requests || 0) },
   {
     key: 'tokens',
-    label: 'Token',
+    label: 'Token（左轴）',
+    axis: 'left',
     values: hourly.value.map((point) => (point.prompt_tokens || 0) + (point.completion_tokens || 0)),
   },
+  { key: 'requests', label: '请求（右轴）', axis: 'right', values: hourly.value.map((point) => point.requests || 0) },
 ])
 const tokenSpark = computed(() =>
   hourly.value.map((point) => (point.prompt_tokens || 0) + (point.completion_tokens || 0)),

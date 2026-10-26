@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from ...core.logging import log
+from ...core.paths import shorten_path
 from ...core.settings import Settings, decode_jwt, expand_home, read_token, save_email
 from ...providers.base import Provider, ProviderError
 from .events import AuthEventStore
@@ -196,7 +197,7 @@ class AuthService:
             self._event("登录", True, email=email, source="面板")
             jwt = decode_jwt(token) or {}
             log(f"认证成功（{email}）→ {path}，{jwt.get('days_left')} 天后过期")
-            return {"token": self.provider.token_status(), "path": path}
+            return {"token": self.provider.token_status(), "path": shorten_path(path)}
 
     async def refresh(self, reason: str = "") -> bool:
         if not self.enabled:
@@ -213,7 +214,7 @@ class AuthService:
         try:
             write_token(self.settings.upstream.token_file, token)
         except OSError as exc:
-            self.last_error = f"写入 token 失败：{exc}"
+            self.last_error = f"写入 {shorten_path(self.settings.upstream.token_file)} 失败：{exc.strerror or exc}"
             self._event("续期", False, email=self.email, detail=self.last_error, source=reason or "定时")
             return False
 

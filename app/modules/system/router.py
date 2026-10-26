@@ -117,6 +117,7 @@ def attach(app: FastAPI, settings: Settings, provider: Provider) -> None:
                 "max_tokens_cap": settings.max_tokens_cap,
                 "keep_alive_ms": settings.keep_alive_ms,
                 "config_path": shorten_path(settings.config_path),
+                "token_file": shorten_path(settings.upstream.token_file),
             },
             "token": provider.token_status(),
             "auth": auth.status(),

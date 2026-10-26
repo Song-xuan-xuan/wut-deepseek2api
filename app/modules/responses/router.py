@@ -18,7 +18,12 @@ from ...core.settings import Settings
 from ...providers.base import Provider, ProviderError
 from ..proxy.transform import sanitize_chat_request
 from ..usage.store import UsageStore
-from .convert import ResponsesStreamWriter, error_body, to_openai_request, to_response_object
+from .convert import (
+    ResponsesStreamWriter,
+    error_body,
+    to_openai_request,
+    to_response_object,
+)
 
 
 def attach(

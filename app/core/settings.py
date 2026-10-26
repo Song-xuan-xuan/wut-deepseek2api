@@ -16,7 +16,7 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
-from .paths import data_dir, migrate_legacy, resolve_path
+from .paths import data_dir, migrate_legacy, resolve_path, shorten_path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -235,9 +235,9 @@ def token_status(upstream: UpstreamSettings) -> dict[str, Any]:
     jwt = decode_jwt(token) or {}
     status.update(jwt)
     if not token:
-        status["hint"] = f"把浏览器里的 JWT 写入 {upstream.token_file}，或设置 WHUT_TOKEN"
+        status["hint"] = f"打开面板点「一键认证」，或把 JWT 写入 {shorten_path(upstream.token_file)}"
     elif jwt.get("expiring_soon"):
-        status["hint"] = f"token 将在 {jwt['days_left']} 天后过期，请更新 {upstream.token_file}"
+        status["hint"] = f"token 将在 {jwt['days_left']} 天后过期，点「立即续期」或重新认证"
     return status
 
 

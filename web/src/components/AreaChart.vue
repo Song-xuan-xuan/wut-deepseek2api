@@ -30,7 +30,16 @@
       <g>
         <template v-for="(tick, index) in ticks" :key="`t-${index}`">
           <line class="grid-line" :x1="pad.left" :x2="W - pad.right" :y1="tick.y" :y2="tick.y" />
-          <text class="axis-label" :x="pad.left - 8" :y="tick.y + 3" text-anchor="end">{{ tick.label }}</text>
+          <text class="axis-label" :x="pad.left - 8" :y="tick.y + 3" text-anchor="end">{{ tick.left }}</text>
+          <text
+            v-if="hasRightAxis"
+            class="axis-label"
+            :x="W - pad.right + 8"
+            :y="tick.y + 3"
+            text-anchor="start"
+          >
+            {{ tick.right }}
+          </text>
         </template>
       </g>
 
@@ -134,7 +143,7 @@ const props = defineProps({
 })
 
 const W = 720
-const pad = { top: 14, right: 14, bottom: 26, left: 44 }
+const pad = { top: 14, right: 52, bottom: 26, left: 48 }
 const uid = Math.random().toString(36).slice(2, 8)
 const hidden = ref(new Set())
 const hover = ref(null)
@@ -149,14 +158,28 @@ const legend = computed(() =>
   })),
 )
 
-const maxValue = computed(() => {
-  const values = props.series
-    .filter((item) => !hidden.value.has(item.key))
-    .flatMap((item) => item.values)
+const hasRightAxis = computed(() => props.series.some((item) => item.axis === 'right'))
+
+function niceMax(values) {
   const max = Math.max(...values, 1)
   const magnitude = 10 ** Math.floor(Math.log10(max))
   return Math.ceil(max / magnitude) * magnitude
-})
+}
+
+const maxLeft = computed(() =>
+  niceMax(
+    props.series
+      .filter((item) => !hidden.value.has(item.key) && item.axis !== 'right')
+      .flatMap((item) => item.values),
+  ),
+)
+const maxRight = computed(() =>
+  niceMax(
+    props.series
+      .filter((item) => !hidden.value.has(item.key) && item.axis === 'right')
+      .flatMap((item) => item.values),
+  ),
+)
 
 const innerW = W - pad.left - pad.right
 const innerH = props.height - pad.top - pad.bottom
@@ -166,8 +189,9 @@ function xAt(index) {
   if (count.value <= 1) return pad.left + innerW / 2
   return pad.left + (index / (count.value - 1)) * innerW
 }
-function yAt(value) {
-  const ratio = maxValue.value ? value / maxValue.value : 0
+function yAt(value, axis = 'left') {
+  const max = axis === 'right' ? maxRight.value : maxLeft.value
+  const ratio = max ? value / max : 0
   return pad.top + innerH * (1 - Math.min(Math.max(ratio, 0), 1))
 }
 
@@ -178,7 +202,8 @@ const visible = computed(() =>
       label: item.label,
       values: item.values,
       colorIndex: (index % 6) + 1,
-      points: item.values.map((value, i) => ({ x: xAt(i), y: yAt(value), value })),
+      axis: item.axis === 'right' ? 'right' : 'left',
+      points: item.values.map((value, i) => ({ x: xAt(i), y: yAt(value, item.axis), value })),
     }))
     .filter((item) => !hidden.value.has(item.key)),
 )
@@ -186,8 +211,12 @@ const visible = computed(() =>
 const ticks = computed(() => {
   const steps = 4
   return Array.from({ length: steps + 1 }, (_, index) => {
-    const value = (maxValue.value / steps) * (steps - index)
-    return { y: yAt(value), label: shortNumber(value) }
+    const ratio = (steps - index) / steps
+    return {
+      y: pad.top + innerH * (1 - ratio),
+      left: shortNumber(maxLeft.value * ratio),
+      right: shortNumber(maxRight.value * ratio),
+    }
   })
 })
 

@@ -179,11 +179,12 @@ const chartLabels = computed(() => points.value.map((point) => point.bucket))
 const chartSeries = computed(() => [
   {
     key: 'tokens',
-    label: 'Token',
+    label: 'Token（左轴）',
+    axis: 'left',
     values: points.value.map((point) => (point.prompt_tokens || 0) + (point.completion_tokens || 0)),
   },
-  { key: 'requests', label: '请求', values: points.value.map((point) => point.requests || 0) },
-  { key: 'errors', label: '错误', values: points.value.map((point) => point.errors || 0) },
+  { key: 'requests', label: '请求（右轴）', axis: 'right', values: points.value.map((point) => point.requests || 0) },
+  { key: 'errors', label: '错误（右轴）', axis: 'right', values: points.value.map((point) => point.errors || 0) },
 ])
 const requestSpark = computed(() => points.value.map((point) => point.requests || 0))
 const tokenSpark = computed(() =>
