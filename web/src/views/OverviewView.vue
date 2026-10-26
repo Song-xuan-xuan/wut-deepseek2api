@@ -155,7 +155,9 @@ const recent = ref([])
 const overview = ref(null)
 
 const today = computed(() => state.usage?.today || {})
-const hourly = computed(() => overview.value?.series?.points || [])
+const hourly = computed(
+  () => state.usage?.series_24h?.points || overview.value?.series?.points || [],
+)
 const spark = computed(() => hourly.value.map((point) => point.requests || 0))
 const hourlyLabels = computed(() => hourly.value.map((point) => point.bucket))
 const hourlySeries = computed(() => [
@@ -220,7 +222,8 @@ const recentColumns = [
 ]
 
 async function load() {
-  const [recentResp, usageResp] = await Promise.all([api.recent(10), api.usage('24h')])
+  // 最近请求 + 7 天模型占比（KPI 与 24h 折线已经由 system/info 提供）
+  const [recentResp, usageResp] = await Promise.all([api.recent(10), api.usage('7d')])
   if (recentResp.ok) recent.value = recentResp.data.items
   if (usageResp.ok) overview.value = usageResp.data
 }

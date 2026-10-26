@@ -127,6 +127,10 @@ def attach(app: FastAPI, settings: Settings, provider: Provider) -> None:
                 "available": store.available,
                 "db_path": shorten_path(store.db_path),
                 "total_rows": store.total_count(),
+                # 仪表盘的 KPI 与 24h 折线都从这里取，避免前端再发两个请求
+                "today": store.summary("today")["totals"],
+                "last_24h": store.summary("24h")["totals"],
+                "series_24h": store.series("24h"),
             },
             "server_time": time.strftime("%Y-%m-%d %H:%M:%S"),
         }

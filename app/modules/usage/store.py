@@ -12,6 +12,7 @@ from __future__ import annotations
 import csv
 import io
 import time
+from datetime import datetime, timedelta
 from typing import Any
 
 from ...core.db import Database
@@ -178,15 +179,53 @@ class UsageStore:
         return [{"status": r["status"], "count": r["count"]} for r in rows]
 
     def series(self, range_key: str = "7d") -> dict[str, Any]:
-        """today/24h 按小时，其余按天。"""
+        """按小时/按天的时间序列，**空档补零**。
+
+        不补零的话，只有一个数据点时图上是空的、两个点时是一条斜线，
+        看起来像"没数据"，实际是可视化被稀疏数据坑了。
+        """
+        hourly = range_key in ("today", "24h")
+        bucket = "hour" if hourly else "day"
         where, params = self._where(range_key, None)
-        bucket = "hour" if range_key in ("today", "24h") else "day"
         rows = self._query(
             f"SELECT {bucket} AS bucket, {TOTAL_COLUMNS} FROM usage{where}"
             f" GROUP BY {bucket} ORDER BY {bucket}",
             params,
         )
-        return {"bucket": bucket, "points": [_row_to_dict(r, key="bucket") for r in rows]}
+        existing = {row["bucket"]: _row_to_dict(row, key="bucket") for row in rows}
+        keys = self._bucket_keys(range_key, bucket)
+        points = [existing.get(key) or _empty_point(key) for key in keys]
+        return {"bucket": bucket, "points": points}
+
+    def _bucket_keys(self, range_key: str, bucket: str) -> list[str]:
+        now = datetime.now()
+        if bucket == "hour":
+            current = now.replace(minute=0, second=0, microsecond=0)
+            if range_key == "today":
+                # 今天只补到当前小时，避免把还没发生的时段画成 0
+                count = current.hour + 1
+                start = current.replace(hour=0)
+            else:
+                count = 24
+                start = current - timedelta(hours=count - 1)
+            keys = [start + timedelta(hours=index) for index in range(count)]
+            return [item.strftime("%Y-%m-%dT%H:00") for item in keys]
+
+        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        if range_key == "7d":
+            count = 7
+        elif range_key == "30d":
+            count = 30
+        else:  # all：从最早一条记录算起，最多 365 天
+            rows = self._query("SELECT MIN(day) AS first FROM usage")
+            first = rows[0]["first"] if rows and rows[0]["first"] else today.strftime("%Y-%m-%d")
+            try:
+                start = datetime.strptime(first, "%Y-%m-%d")
+            except ValueError:
+                start = today
+            count = min(max((today - start).days + 1, 1), 365)
+        keys = [today - timedelta(days=count - 1 - index) for index in range(count)]
+        return [item.strftime("%Y-%m-%d") for item in keys]
 
     def recent(
         self,
@@ -301,6 +340,19 @@ def _percentile(values: list[float], pct: float) -> float:
         return 0.0
     index = min(len(values) - 1, max(0, round((pct / 100) * (len(values) - 1))))
     return round(values[index], 1)
+
+
+def _empty_point(bucket_key: str) -> dict[str, Any]:
+    return {
+        "bucket": bucket_key,
+        "requests": 0,
+        "errors": 0,
+        "streams": 0,
+        "tool_calls": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "reasoning_tokens": 0,
+    }
 
 
 def _row_to_dict(row: Any, key: str = "model") -> dict[str, Any]:

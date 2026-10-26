@@ -80,7 +80,7 @@ class Settings:
     usage: UsageSettings = field(default_factory=UsageSettings)
     access: AccessSettings = field(default_factory=AccessSettings)
     default_model: str = ""
-    client_api_key: str = ""
+    client_api_key: str = "sk-whut-local"
     max_tokens_cap: int = 32_768
     strip_fields: list[str] = field(
         default_factory=lambda: ["store", "metadata", "service_tier", "safety_identifier"]

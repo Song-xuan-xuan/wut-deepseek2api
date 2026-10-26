@@ -35,16 +35,41 @@
       </g>
 
       <g v-for="item in visible" :key="item.key">
-        <path :d="areaPath(item)" :fill="`url(#grad-${uid}-${item.key})`" stroke="none" />
-        <path
-          :d="linePath(item)"
-          fill="none"
-          :stroke="`var(--chart-${item.colorIndex})`"
-          stroke-width="2"
-          stroke-linejoin="round"
-          stroke-linecap="round"
-          vector-effect="non-scaling-stroke"
-        />
+        <template v-if="item.points.length > 1">
+          <path :d="areaPath(item)" :fill="`url(#grad-${uid}-${item.key})`" stroke="none" />
+          <path
+            :d="linePath(item)"
+            fill="none"
+            :stroke="`var(--chart-${item.colorIndex})`"
+            stroke-width="2"
+            stroke-linejoin="round"
+            stroke-linecap="round"
+            vector-effect="non-scaling-stroke"
+          />
+        </template>
+        <!-- 只有一个数据点时，画一个点 + 一条虚线基准，避免"空白图" -->
+        <template v-else-if="item.points.length === 1">
+          <line
+            :x1="pad.left"
+            :x2="W - pad.right"
+            :y1="item.points[0].y"
+            :y2="item.points[0].y"
+            :stroke="`var(--chart-${item.colorIndex})`"
+            stroke-width="1.5"
+            stroke-dasharray="4 4"
+            opacity="0.55"
+            vector-effect="non-scaling-stroke"
+          />
+          <circle
+            :cx="item.points[0].x"
+            :cy="item.points[0].y"
+            r="4.5"
+            :fill="`var(--chart-${item.colorIndex})`"
+            stroke="var(--card)"
+            stroke-width="2"
+            vector-effect="non-scaling-stroke"
+          />
+        </template>
       </g>
 
       <g>
@@ -63,7 +88,7 @@
       <g v-if="hover !== null && visible.length">
         <line class="cursor-line" :x1="hoverX" :x2="hoverX" :y1="pad.top" :y2="H - pad.bottom" />
         <circle
-          v-for="item in visible"
+          v-for="item in visible.filter((s) => s.points.length > 1)"
           :key="`h-${item.key}`"
           :cx="hoverX"
           :cy="item.points[hover].y"
