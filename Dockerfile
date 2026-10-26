@@ -12,6 +12,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY app ./app
 # web/dist 已随仓库提交（不想装 Node 也能跑）；改了前端就 npm run build
 COPY web/dist ./web/dist
@@ -20,11 +21,13 @@ COPY config.example.json ./config.json
 
 RUN useradd --uid 10001 --create-home app \
     && mkdir -p /app/data \
-    && chown -R app:app /app/data
-USER app
+    && chown -R app:app /app/data /app/config.json \
+    && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8787/health', timeout=5).status == 200 else 1)"
 
+# 入口以 root 起，修好数据目录属主后用 setpriv 降权到 10001 运行
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["python", "-m", "app"]

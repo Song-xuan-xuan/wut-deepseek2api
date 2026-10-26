@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import uvicorn
 
 from .core.paths import shorten_path
@@ -10,6 +12,8 @@ from .main import create_app
 
 
 def main() -> None:
+    # 运行数据里有 token 和分发明文 key，新建文件统一 600
+    os.umask(0o077)
     settings = load_settings()
     app = create_app(settings)
     host, port = settings.listen.host, settings.listen.port

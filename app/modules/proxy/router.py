@@ -22,7 +22,7 @@ from .transform import (
     upstream_error_message,
 )
 
-MAX_BODY_BYTES = 32 * 1024 * 1024
+MAX_BODY_BYTES = 1024 * 1024  # 学校反代在 ~1MB 请求体处返回 413，提前拦下并说明原因
 MODEL_CACHE_TTL = 60.0
 
 
@@ -68,7 +68,11 @@ def attach(
         started = time.time()
         raw = await request.body()
         if len(raw) > MAX_BODY_BYTES:
-            return error_response(f"请求体超过 {MAX_BODY_BYTES} 字节", 413)
+            return error_response(
+                f"请求体 {len(raw)} 字节，超过上限 {MAX_BODY_BYTES} 字节"
+                "（学校反向代理在约 1MB 处会返回 413，建议裁剪历史消息后再试）",
+                413,
+            )
         try:
             incoming = json.loads(raw.decode("utf-8", "replace") or "{}")
         except json.JSONDecodeError:

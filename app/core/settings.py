@@ -257,11 +257,20 @@ def save_email(settings: Settings, email: str) -> Settings:
     block["email"] = email
     block.setdefault("enabled", True)
 
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
-    os.chmod(path, 0o600)
+    try:
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+        os.chmod(path, 0o600)
+    except OSError as exc:
+        # 只读挂载 / 容器里文件属主不对时，学号写不回配置也应继续：
+        # token 已经落盘，本次运行的内存配置也已更新，只是重启后要再认证一次。
+        print(
+            f"[警告] 学号写回 {shorten_path(str(path))} 失败（{exc.strerror or exc}），"
+            "本次运行不受影响，重启后需重新认证",
+            flush=True,
+        )
 
     settings.token_refresh.email = email
     return settings

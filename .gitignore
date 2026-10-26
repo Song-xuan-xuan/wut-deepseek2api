@@ -14,6 +14,7 @@ __pycache__/
 
 # 本地开发用（不随仓库发布）
 tests/
+scripts/
 
 # 前端
 web/node_modules/

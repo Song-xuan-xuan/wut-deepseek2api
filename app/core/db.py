@@ -98,12 +98,24 @@ class Database:
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.executescript(SCHEMA)
             self._conn = conn
+            self._restrict_permissions()
             self._migrate()
             conn.executescript(INDEXES)
             conn.commit()
+            self._restrict_permissions()
         except sqlite3.Error as exc:
             self.last_error = f"{type(exc).__name__}: {exc}"
             log(f"数据库不可用：{self.last_error}")
+
+    def _restrict_permissions(self) -> None:
+        """库里有明文分发 key，权限收到 600（WAL/SHM 同样处理）。"""
+        for suffix in ("", "-wal", "-shm"):
+            target = self.path + suffix
+            if os.path.exists(target):
+                try:
+                    os.chmod(target, 0o600)
+                except OSError:
+                    pass
 
     def _migrate(self) -> None:
         assert self._conn is not None

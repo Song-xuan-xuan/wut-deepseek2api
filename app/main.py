@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import FastAPI, Request
@@ -90,12 +92,35 @@ def create_app(
     app.state.req_log = log if settings.log_requests else noop
     app.state.allowed = make_guard(settings, settings.client_api_key)
 
+    # 只允许本机来源（面板同源、Vite 开发 5173）。
+    # 之前的 "*" 会让任意网站在浏览器里直接读写本机接口（面板接口对本机免鉴权）。
+    LOCAL_ORIGIN = r"^https?://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$"
+
+    def _is_local_origin(origin: str) -> bool:
+        return bool(re.match(LOCAL_ORIGIN, origin))
+
+    def _is_same_origin(origin: str, host_header: str) -> bool:
+        """面板通过局域网 IP 访问时（Host 与 Origin 的 host:port 相同）放行。"""
+        return bool(host_header) and urlsplit(origin).netloc == host_header
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_origin_regex=LOCAL_ORIGIN,
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def block_cross_site_writes(request: Request, call_next):
+        """写操作带 Origin 时必须来自本机；不带的（curl / SDK）放行。
+
+        面板接口对本机免 key，若不加这道判断，任意网页都能 POST 创建/删除 key（CSRF）。
+        """
+        if request.method in ("POST", "PATCH", "DELETE", "PUT") and request.url.path.startswith("/api/"):
+            origin = request.headers.get("origin")
+            if origin and not (_is_local_origin(origin) or _is_same_origin(origin, request.headers.get("host", ""))):
+                return JSONResponse(error_payload("跨站请求被拒绝", 403, auth_hint=False), status_code=403)
+        return await call_next(request)
 
     class _Unauthorized(Exception):
         pass

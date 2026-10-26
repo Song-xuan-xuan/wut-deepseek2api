@@ -22,9 +22,35 @@ def attach(app: FastAPI, settings: Settings, provider: Provider) -> None:
     auth = app.state.auth
     req_log = app.state.req_log
 
+    # 面板每 5 秒轮询一次 /health，不能每次都去敲三遍上游：
+    # 结果缓存 10 秒；熔断打开时直接返回，避免在断网时排队 20 多秒。
+    health_cache: dict[str, Any] = {"at": 0.0, "payload": None}
+    HEALTH_TTL = 10.0
+
     @app.get("/health")
     async def health() -> JSONResponse:
         started = time.time()
+        cached = health_cache["payload"]
+        if cached and time.time() - health_cache["at"] < HEALTH_TTL:
+            token_now = provider.token_status()
+            cached = {**cached, "token": token_now, "cached": True}
+            return JSONResponse(cached, status_code=200 if cached["status"] == "ok" else 503)
+
+        if provider.circuit().get("open"):
+            token_now = provider.token_status()
+            payload = {
+                "status": "degraded",
+                "service": "whut-2api",
+                "version": __import__("app").__version__,
+                "upstream": settings.upstream.base_url,
+                "token": token_now,
+                "circuit": provider.circuit(),
+                "checks": {"upstream": False, "auth": False, "models": False},
+                "error": "上游熔断冷却中，暂停探测",
+            }
+            health_cache.update(at=time.time(), payload=payload)
+            return JSONResponse(payload, status_code=503)
+
         token = provider.token_status()
         result: dict[str, Any] = {
             "status": "ok",
@@ -36,22 +62,23 @@ def attach(app: FastAPI, settings: Settings, provider: Provider) -> None:
         }
 
         async def check_upstream() -> dict | None:
-            return await provider.version()
+            return await provider.version(retries=0, timeout=6.0)
 
         async def check_auth() -> dict:
             try:
-                return {"user": await provider.session()}
+                return {"user": await provider.session(retries=0, timeout=6.0)}
             except Exception as exc:  # noqa: BLE001
                 if getattr(exc, "status", 0) in (401, 403) and await auth.refresh("健康检查 401/403"):
                     try:
-                        return {"user": await provider.session(), "refreshed": True}
+                        return {"user": await provider.session(retries=0, timeout=6.0), "refreshed": True}
                     except Exception as retry_exc:  # noqa: BLE001
                         return {"error": getattr(retry_exc, "message", str(retry_exc))}
                 return {"error": getattr(exc, "message", str(exc))}
 
         async def check_models() -> dict:
             try:
-                return {"models": await app.state.get_models(force=True)}
+                # 健康检查直连 provider：不走 /v1/models 的缓存与重试，别让断网时排队几十秒
+                return {"models": await provider.list_models(retries=0, timeout=6.0)}
             except Exception as exc:  # noqa: BLE001
                 return {"error": getattr(exc, "message", str(exc))}
 
@@ -91,6 +118,7 @@ def attach(app: FastAPI, settings: Settings, provider: Provider) -> None:
         if not auth.enabled:
             result.setdefault("warnings", []).append("还没有学号，点面板「一键认证」即可")
 
+        health_cache.update(at=time.time(), payload=result)
         req_log(f"GET /health {result['status']} {int((time.time() - started) * 1000)}ms")
         return JSONResponse(result, status_code=200 if result["status"] == "ok" else 503)
 

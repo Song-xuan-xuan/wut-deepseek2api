@@ -1,6 +1,6 @@
 # whut-2api
 
-把武汉理工的 `chatcloud.whut.edu.cn`（学校 OpenWebUI · "DeepSeek云服务版"）包装成**标准协议接口**，让 pi、Claude Code、Codex CLI、Cline、Cherry Studio 或任何 OpenAI SDK 都能直接用上学校的模型。
+把武汉理工的 "DeepSeek云服务版"包装成**标准协议接口**，让 pi、Claude Code、Codex CLI、Cline、Cherry Studio 或任何 OpenAI SDK 都能直接用上学校的模型。
 
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED?logo=docker&logoColor=white)](.) [![Python](https://img.shields.io/badge/python-3.10+-3776AB?logo=python&logoColor=white)](.) [![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
@@ -15,7 +15,7 @@
 
 ### 为什么需要这一层
 
-学校这套 OpenWebUI **本来就提供 OpenAI 格式的接口**（`POST /api/chat/completions`），所以不需要逆向网页、不需要浏览器自动化。
+这套 OpenWebUI **本来就提供 OpenAI 格式的接口**（`POST /api/chat/completions`），所以不需要逆向网页、不需要浏览器自动化。
 真正麻烦的只有两个：
 
 1. **个人 API Key 被管理员关了**（`enable_api_key: false`）→ 只能用浏览器登录后那份 JWT；
@@ -30,7 +30,7 @@
 | ① | 客户端用**本地假 key**（`sk-whut-local`）请求 `http://127.0.0.1:8787/v1/...` |
 | ② | 代理**注入真实的学校 JWT**（从 `data/token` 读，按修改时间热加载，换 token 不用重启） |
 | ③ | 代理**修正参数**：`max_completion_tokens → max_tokens`、钳制输出上限、剔除 `store`/`metadata` 等上游不认识的字段 |
-| ④ | 转发到 `https://chatcloud.whut.edu.cn/api/chat/completions`，学校再转给 DeepSeek |
+| ④ | 转发到 `https://chatcloud.whut.edu.cn/api/chat/completions`，再转给 DeepSeek |
 | ⑤ | 响应**字节级透传**回来（流式不拆包、不重组），同时把 usage / 耗时**落库**到 `data/usage.db`（SQLite） |
 | ⑥ | 客户端拿到的就是标准响应：OpenAI JSON / SSE、Anthropic 事件流或 Responses 事件流，工具调用原样可用 |
 
@@ -55,20 +55,10 @@
 | **③ 统计 usage** | 知道用了多少 | SQLite 落库（重启不清零），按模型 / 按 key / 按小时聚合，CSV 导出 |
 | **④ 分发 access** | 多设备各用各的 | 独立 key、每分钟限速、每日 token 配额、随时吊销，用量分开统计 |
 
-### 几个容易被忽略的工程细节
-
-| 细节 | 为什么重要 |
-|---|---|
-| **上游缺 `[DONE]` 时补一个** | 否则 agent 会一直挂着等流结束 |
-| **静默 8 秒发 SSE 心跳** | 思考模型首字要 2~6 秒，中间网关会掐断长连接 |
-| **连续 3 次连不上就熔断 60 秒** | 学校侧偶发不可达时，反复重试只会把封禁拖得更久 |
-| **429 尊重 `Retry-After`** | 上游限流时不要盲目退避 |
-| **`trust_env=False`** | Python 的 httpx 默认读 `HTTP_PROXY`/`ALL_PROXY`，会把校园地址导去本机代理，而学校边缘会拒绝代理出口 IP |
-
 ### 为什么续期不需要密码
 
 实测（2026-11）：学校的 `POST /api/v1/auths/signin` 只校验**学号是否存在**，`password` 字段只要非空即可通过。
-所以本项目只需要学号，从不保存也不需要你的密码。这是学校侧的认证缺陷，建议顺手告知管理员。
+所以本项目只需要学号，从不保存也不需要你的密码。
 
 ---
 
@@ -129,16 +119,6 @@ data/
 
 看到"认证成功，token 剩 7.0 天"就好了：学号写回 `config.json`，token 写到 `data/token`，
 之后每 60 分钟检查、剩余不足 2 天自动续期——**再也不用管 token**。
-
-**④ 验证**
-
-```bash
-curl --noproxy '*' -s 127.0.0.1:8787/health | python3 -m json.tool
-# 三个 checks 都是 true，models 里有 deepseek-v4-flash 即可
-```
-
-> **改面板**（可选）：`cd web && npm install && npm run dev` → <http://127.0.0.1:5173>，
-> 接口自动代理到 8787。改完 `npm run build`，产物在 `web/dist`（已随仓库提交，普通用户不需要 Node）。
 
 ### 二、Docker 部署（推荐）
 
@@ -212,7 +192,7 @@ docker compose logs -f          # 看日志
 |---|---|
 | Base URL | `http://127.0.0.1:8787/v1` |
 | API Key | `sk-whut-local`（`config.json` 的 `client_api_key`） |
-| 模型 | `deepseek-v4-flash`（或 `deepseek-v3`） |
+| 模型 | `deepseek-v4-flash` |
 
 <details>
 <summary><b>pi</b>（`~/.pi/agent/models.json`）</summary>

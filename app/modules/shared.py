@@ -8,10 +8,11 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 
-def error_payload(message: str, status: int = 400) -> dict[str, Any]:
-    """OpenAI 风格的错误体。"""
+def error_payload(message: str, status: int = 400, auth_hint: bool = True) -> dict[str, Any]:
+    """OpenAI 风格的错误体。auth_hint=False 用于与凭证无关的 403（例如跨站请求被拒）。"""
     if status in (401, 403):
-        error_type, hint = "authentication_error", "（凭证可能已过期，点面板的「一键认证」）"
+        error_type = "authentication_error"
+        hint = "（凭证可能已过期，点面板的「一键认证」）" if auth_hint else ""
     elif status == 429:
         error_type, hint = "rate_limit_error", "（上游限流，降低并发或稍后重试）"
     elif status >= 500:

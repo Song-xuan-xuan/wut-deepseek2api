@@ -42,9 +42,16 @@ def migrate_legacy() -> list[str]:
     moved: list[str] = []
     target_dir = data_dir()
 
+    def is_file_quiet(path: Path) -> bool:
+        """HOME 不可读（如容器内 /root）时 is_file() 会抛 PermissionError，不能让它崩启动。"""
+        try:
+            return path.is_file()
+        except OSError:
+            return False
+
     token = target_dir / "token"
     legacy_token = Path(os.path.expanduser(LEGACY_TOKEN))
-    if not token.exists() and legacy_token.is_file():
+    if not token.exists() and is_file_quiet(legacy_token):
         try:
             shutil.copy2(legacy_token, token)
             token.chmod(0o600)
@@ -54,12 +61,12 @@ def migrate_legacy() -> list[str]:
 
     legacy_db = Path(os.path.expanduser(LEGACY_DATA_DIR)) / "usage.db"
     db = target_dir / "usage.db"
-    if not db.exists() and legacy_db.is_file():
+    if not db.exists() and is_file_quiet(legacy_db):
         try:
             shutil.copy2(legacy_db, db)
             for suffix in ("-wal", "-shm"):
                 sidecar = legacy_db.with_name(legacy_db.name + suffix)
-                if sidecar.is_file():
+                if is_file_quiet(sidecar):
                     shutil.copy2(sidecar, db.with_name(db.name + suffix))
             moved.append(f"{legacy_db} → {db}")
         except OSError:

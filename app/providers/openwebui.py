@@ -43,7 +43,7 @@ class OpenWebUIProvider:
             self._client = httpx.AsyncClient(
                 base_url=self.settings.base_url,
                 timeout=httpx.Timeout(
-                    connect=20.0,
+                    connect=8.0,
                     read=max(self.settings.timeout_ms / 1000, 30.0),
                     write=60.0,
                     pool=30.0,
@@ -100,9 +100,14 @@ class OpenWebUIProvider:
     def _note_failure(self) -> None:
         self._failures += 1
         threshold = self.settings.circuit_breaker_threshold
+        was_closed = self._open_until <= time.monotonic()
         if threshold and self._failures >= threshold:
             self._open_until = time.monotonic() + max(1, self.settings.circuit_breaker_seconds)
-            log(f"上游连续 {self._failures} 次不可达，熔断 {self.settings.circuit_breaker_seconds}s")
+            if was_closed:  # 每次打开只记一条，不要重试一次就刷一行
+                log(
+                    f"上游连续 {self._failures} 次不可达，熔断 {self.settings.circuit_breaker_seconds}s"
+                    f"（{self.settings.base_url}）"
+                )
 
     def _note_success(self) -> None:
         self._failures = 0
@@ -194,15 +199,17 @@ class OpenWebUIProvider:
 
     # ------------------------------------------------------------ 端点
 
-    async def list_models(self) -> Any:
-        resp = await self.request(self.settings.models_path)
+    async def list_models(self, retries: int | None = None, timeout: float | None = None) -> Any:
+        resp = await self.request(self.settings.models_path, retries=retries, timeout=timeout)
         if resp.status_code >= 400:
             raise ProviderError(resp.status_code, "模型列表获取失败")
         return resp.json()
 
-    async def version(self) -> dict[str, Any] | None:
+    async def version(
+        self, retries: int | None = None, timeout: float = 8.0
+    ) -> dict[str, Any] | None:
         try:
-            resp = await self.request(self.settings.config_path, timeout=15.0)
+            resp = await self.request(self.settings.config_path, timeout=timeout, retries=retries)
         except ProviderError:
             return None
         if resp.status_code >= 400:
@@ -210,8 +217,8 @@ class OpenWebUIProvider:
         data = resp.json()
         return {"name": data.get("name"), "version": data.get("version")}
 
-    async def session(self) -> dict[str, Any]:
-        resp = await self.request(self.settings.session_path, timeout=20.0)
+    async def session(self, retries: int | None = None, timeout: float = 12.0) -> dict[str, Any]:
+        resp = await self.request(self.settings.session_path, timeout=timeout, retries=retries)
         if resp.status_code >= 400:
             raise ProviderError(resp.status_code, "凭证校验失败")
         data = resp.json()
