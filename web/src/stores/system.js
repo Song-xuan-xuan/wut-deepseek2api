@@ -20,6 +20,11 @@ const state = reactive({
 let timer = null
 let subscribers = 0
 
+// 从后台切回页面时立刻刷新一次，用户不用等下一轮
+function onVisible() {
+  if (document.visibilityState === 'visible') loadSystem()
+}
+
 export async function loadSystem() {
   const [infoResp, authResp] = await Promise.all([api.info(), api.authStatus()])
   if (!infoResp.ok) {
@@ -43,7 +48,12 @@ export function useSystemStore() {
     subscribers += 1
     if (!timer) {
       loadSystem()
-      timer = setInterval(loadSystem, 5000)
+      // 15 秒一次足够：状态变化不频繁，后端也有 30 秒缓存
+      timer = setInterval(() => {
+        if (document.visibilityState === 'visible') loadSystem()
+      }, 15000)
+      document.addEventListener('visibilitychange', onVisible)
+      window.addEventListener('focus', loadSystem)
     }
   })
   onUnmounted(() => {
@@ -51,6 +61,8 @@ export function useSystemStore() {
     if (subscribers <= 0 && timer) {
       clearInterval(timer)
       timer = null
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', loadSystem)
     }
   })
 

@@ -26,7 +26,7 @@ RUN useradd --uid 10001 --create-home app \
     && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 8787
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=60s --timeout=8s --start-period=20s --retries=3 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8787/health', timeout=5).status == 200 else 1)"
 
 # 入口以 root 起，修好数据目录属主后用 setpriv 降权到 10001 运行

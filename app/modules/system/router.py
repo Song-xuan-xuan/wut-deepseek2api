@@ -25,17 +25,21 @@ def attach(app: FastAPI, settings: Settings, provider: Provider) -> None:
     # 面板每 5 秒轮询一次 /health，不能每次都去敲三遍上游：
     # 结果缓存 10 秒；熔断打开时直接返回，避免在断网时排队 20 多秒。
     health_cache: dict[str, Any] = {"at": 0.0, "payload": None}
-    HEALTH_TTL = 10.0
+    HEALTH_TTL = max(5.0, float(getattr(settings, "health_cache_seconds", 30) or 30))
 
-    @app.get("/health")
-    async def health() -> JSONResponse:
-        started = time.time()
+    async def probe_snapshot(force: bool = False) -> dict[str, Any]:
+        """上游三项探测（版本 / 凭证 / 模型）的缓存快照。
+
+        面板每 15 秒轮询一次；如果每次都真打三遍上游，日志会被刷屏，
+        也白白消耗学校的限流额度。所以 30 秒内直接复用上次结果。
+        """
         cached = health_cache["payload"]
-        if cached and time.time() - health_cache["at"] < HEALTH_TTL:
-            token_now = provider.token_status()
-            cached = {**cached, "token": token_now, "cached": True}
-            return JSONResponse(cached, status_code=200 if cached["status"] == "ok" else 503)
+        if not force and cached and time.time() - health_cache["at"] < HEALTH_TTL:
+            return {**cached, "cached": True}
+        return await _probe_upstream()
 
+    async def _probe_upstream() -> dict[str, Any]:
+        started = time.time()
         if provider.circuit().get("open"):
             token_now = provider.token_status()
             payload = {
@@ -49,7 +53,7 @@ def attach(app: FastAPI, settings: Settings, provider: Provider) -> None:
                 "error": "上游熔断冷却中，暂停探测",
             }
             health_cache.update(at=time.time(), payload=payload)
-            return JSONResponse(payload, status_code=503)
+            return payload
 
         token = provider.token_status()
         result: dict[str, Any] = {
@@ -133,21 +137,30 @@ def attach(app: FastAPI, settings: Settings, provider: Provider) -> None:
             result.setdefault("warnings", []).append("还没有学号，点面板「一键认证」即可")
 
         health_cache.update(at=time.time(), payload=result)
-        req_log(f"GET /health {result['status']} {int((time.time() - started) * 1000)}ms")
-        return JSONResponse(result, status_code=200 if result["status"] == "ok" else 503)
+        req_log(f"探测上游 {result['status']} {int((time.time() - started) * 1000)}ms")
+        return result
+
+    @app.get("/health")
+    async def health() -> JSONResponse:
+        """健康检查：JSON，不消耗 token、不碰对话接口。
+
+        内部只做三件事（都带 30 秒缓存，可用 health_cache_seconds 调）：
+        `GET /api/config`（版本）、`GET /api/v1/auths/`（你的凭证是否有效）、
+        `GET /api/models`（模型列表）。Docker healthcheck 和面板轮询都打它。
+        """
+        payload = await probe_snapshot()
+        payload = {**payload, "token": provider.token_status()}
+        return JSONResponse(payload, status_code=200 if payload["status"] == "ok" else 503)
 
     @app.get("/api/system/info")
     async def system_info(request: Request) -> Any:
         allowed = app.state.allowed
         if not allowed(request):
             return JSONResponse({"error": {"message": "需要本地 API key", "code": 401}}, status_code=401)
-        models: list[str] = []
-        models_error = None
-        try:
-            payload = await app.state.get_models()
-            models = [m["id"] for m in payload["data"]]
-        except Exception as exc:  # noqa: BLE001
-            models_error = getattr(exc, "message", str(exc))
+        # 复用 /health 的缓存快照（30 秒），面板轮询不会反复打上游
+        snapshot = await probe_snapshot()
+        models: list[str] = list(snapshot.get("models") or [])
+        models_error = snapshot.get("models_error")
         listen = f"{settings.listen.host}:{settings.listen.port}"
         # 容器里监听 0.0.0.0，但用户是在宿主机浏览器里访问，给个能直接点开的地址
         display_host = "127.0.0.1" if settings.listen.host in ("0.0.0.0", "::") else settings.listen.host

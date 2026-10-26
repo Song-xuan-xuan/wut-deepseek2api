@@ -51,5 +51,6 @@
     "default_daily_token_limit": 0,
     "expose_network": true
   },
-  "repo_url": "https://github.com/Song-xuan-xuan/wut-deepseek2api"
+  "repo_url": "https://github.com/Song-xuan-xuan/wut-deepseek2api",
+  "health_cache_seconds": 30
 }

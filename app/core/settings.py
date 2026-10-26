@@ -90,6 +90,8 @@ class Settings:
     )
     enable_native_tool_calling: bool = False
     keep_alive_ms: int = 8_000
+    # 面板轮询 /health 与 /api/system/info 时，上游探测结果缓存多久（秒）
+    health_cache_seconds: int = 30
     log_requests: bool = True
     models: list[Any] = field(default_factory=list)
     repo_url: str = "https://github.com/Song-xuan-xuan/wut-deepseek2api"
