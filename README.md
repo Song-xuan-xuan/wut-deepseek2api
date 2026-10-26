@@ -334,7 +334,7 @@ print(resp.choices[0].message.content)
 
 | 约束 | 实测值 | 对你的影响 |
 |---|---|---|
-| **请求体上限** | `1,048,576` 字节（1 MiB），超了 nginx 直接 `413` | 一次能塞多少字由体量决定，折合 token 看密度：英文 ≈ 20 万 / 中文 ≈ 49 万 / 高密度 ASCII ≈ 78 万 |
+| **请求体上限** | `1,048,576` 字节（1 MiB），超了 nginx 直接 `413` | 一次能塞多少字由体量决定，折合 token 看密度：中文 ≈ 19.7 万 / 英文散文 ≈ 21 万 / 高熵 ASCII·密集代码 ≈ 78 万（实测见 docs/model-capabilities.md） |
 | **输出预算** | 简单问答 ≥ 512，多轮与 agent 单步 **≥ 1024**，工具/推理 **≥ 2048** | `flash` 的思维链占输出 token 的 **68%**，给少了会得到「200 + 空正文」，看着像模型坏了 |
 | **`tool_choice`** | 一律用 **`auto`** | `required` 不可靠：上游把工具调用写成 `content` 里的 `<｜DSML｜invoke …>` 标记，`tool_calls` 却是 `null` |
 ## 配置（`config.json`）
@@ -354,7 +354,8 @@ print(resp.choices[0].message.content)
 | `strip_fields` | `store,metadata,…` | 上游不一定认识的字段 |
 | `keep_alive_ms` | `8000` | 流式静默心跳，0=关闭 |
 | `default_model` | `deepseek-v4-flash` | 请求没带 model 的兜底 |
-| 模型窗口 | `deepseek-v4-flash`：700K 上下文 / 120K 输出 | 来自 [实测报告](docs/model-capabilities.md)：输入 745,080 tokens 仍能召回开头内容，输出 131072 通过；真实硬限制是 **1 MiB 请求体** |
+| 模型窗口 | `deepseek-v4-flash`：700K 上下文 / 120K 输出 | 来自 [实测报告](docs/model-capabilities.md)：高熵文本下输入 745,080 tokens 仍能召回开头内容，输出 131072 通过 |
+| ⚠️ 请求体硬限制 | **1 MiB** | 每次请求都要把「系统提示 + 全部历史 + 工具定义」整包发出去，字节超 1 MiB 会被学校反代 413。**中文约 20 万 tokens、英文散文也约 20 万**（只有高熵代码类文本能接近 78 万），所以长会话实际可用输入 ≈ 20 万 tokens，而不是 700K |
 | `repo_url` | 本仓库地址 | 面板右上「GitHub」图标跳转的地址 |
 | `token_refresh.email` | 学号 | 面板认证后自动写入 |
 | `token_refresh.refresh_before_days` | `2` | 剩余小于该值就续期 |
